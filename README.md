@@ -1,121 +1,124 @@
+<div dir="rtl">
+
 # ZK Pull
 
-[العربية](README.ar.md) · [Release notes](CHANGELOG.md)
+[English](README.en.md) · [سجل التغييرات](CHANGELOG.md)
 
-A Windows desktop app that pulls attendance from ZKTeco devices over the office network and exports
-it to Excel or CSV. English and Arabic.
+برنامج لنظام Windows يسحب سجلات الحضور من أجهزة ZKTeco عبر شبكة المكتب ويصدّرها إلى Excel أو CSV،
+بواجهة عربية وإنجليزية.
 
-It is the stop-gap until the devices push to ERPNext (see
-[zk_push](https://github.com/t1nk333r/zk_push)): it talks to the device directly on the LAN, the same
-way ZKTeco's own software does, and needs no server.
+هو حل مؤقت إلى أن ترسل الأجهزة بياناتها مباشرة إلى ERPNext (انظر
+[zk_push](https://github.com/t1nk333r/zk_push)): يتصل بالجهاز مباشرة على الشبكة المحلية بالطريقة
+نفسها التي يعمل بها برنامج ZKTeco، ولا يحتاج إلى خادم.
 
-**Nothing is ever deleted from the devices.** The app only reads: it never clears the attendance log,
-never changes users and never sets the clock.
+**لا يُحذف أي شيء من الأجهزة إطلاقًا.** البرنامج يقرأ فقط: لا يمسح سجل الحضور، ولا يغيّر المستخدمين،
+ولا يضبط الساعة.
 
-## Features
+## المزايا
 
-- **Pull** from one device or all of them (TCP port 4370, read-only). Only the punches in the period
-  chosen are saved; the device has no way to send part of its log, so it is read in full and the rest
-  is left out. A device that is off does not stop the others; one message lists the ones that failed.
-  **Cancel** stops a pull. The time of the last pull is shown next to the device.
-- **Serial number check**: a device's serial number is remembered at its first pull. If a later pull
-  answers with another one (a replaced mainboard, or a different device at that IP address), the app
-  asks before saving anything, and it never mixes up two devices' punches.
-- **Pick a period**: today, yesterday, this week (from Sunday), this month, last month, or any dates.
-- **Search** by employee ID, name or department; the export contains what the table shows.
-- **Export** the period to Excel (.xlsx) or CSV, switched with one click, in either layout (chosen
-  next to the Export button):
-  - *Punch log*: one row per punch (employee ID, name, department, date, time, punch type, verified
-    by, device).
-  - *Daily summary*: one row per employee per day (first punch, last punch, hours, number of punches).
-  - The file opens by itself after export (a tick box next to **Export** turns this off).
-- **Names**: a small list of employee ID → name and department. Fill it from the device's own user
-  list, from an Excel/CSV file, or by hand. Device names are often cut short (8 characters on some
-  models), so they can be corrected here.
-- **No duplicates**: pulling the same period again stores nothing twice.
-- **Works offline**: everything pulled is kept locally, so exports work without the device.
-- **Updates itself**: checks GitHub for a new version at startup (can be turned off in Settings) and
-  installs it after asking. The download is checked against the checksum GitHub publishes. This needs
-  internet access; the portable zip only links to the download page.
-- **Keyboard**: F5 pulls, Ctrl+E exports, Ctrl+F searches. The window remembers its size and tab.
-- **Backups**: a copy of the database is kept for each of the last 7 days, and **Back up database…**
-  in Settings saves one anywhere. A damaged database is set aside and the latest backup offered.
-- English and Arabic (right to left). Numbers and dates always use Western digits (0-9).
+- **السحب** من جهاز واحد أو من جميع الأجهزة (منفذ TCP رقم 4370، قراءة فقط). تُحفظ فقط البصمات التي
+  تقع في الفترة المختارة؛ ولا يستطيع الجهاز إرسال جزء من سجله، لذا يُقرأ كاملًا ويُستبعد ما عدا الفترة.
+  إذا كان أحد الأجهزة مطفأً فلا يوقف الأجهزة الأخرى، وتظهر رسالة واحدة بالأجهزة التي تعذّر السحب منها.
+  زر **إلغاء** يوقف السحب. ويظهر وقت آخر سحب بجانب اسم الجهاز.
+- **التحقق من الرقم التسلسلي**: يُحفظ الرقم التسلسلي للجهاز عند أول سحب. وإذا ظهر رقم مختلف في سحب
+  لاحق (بعد استبدال اللوحة الأم، أو لوجود جهاز آخر على عنوان IP نفسه)، يسأل البرنامج قبل حفظ أي شيء،
+  ولا يخلط بصمات جهازين أبدًا.
+- **اختيار الفترة**: اليوم، أمس، هذا الأسبوع (يبدأ يوم الأحد)، هذا الشهر، الشهر الماضي، أو أي تاريخين.
+- **البحث** برقم الموظف أو الاسم أو القسم، والملف المصدَّر يحتوي ما يظهر في الجدول.
+- **التصدير** إلى Excel (.xlsx) أو CSV بضغطة واحدة، بأحد شكلين (يُختار بجانب زر التصدير):
+  - *سجل البصمات*: صف لكل بصمة (رقم الموظف، الاسم، القسم، التاريخ، الوقت، نوع البصمة، طريقة التحقق،
+    الجهاز).
+  - *ملخص يومي*: صف لكل موظف في كل يوم (أول بصمة، آخر بصمة، الساعات، عدد البصمات).
+  - يُفتح الملف تلقائيًا بعد التصدير (يمكن إيقاف ذلك من مربع الاختيار بجانب زر **تصدير**).
+- **الأسماء**: قائمة صغيرة تربط رقم الموظف بالاسم والقسم. تُملأ من قائمة المستخدمين في الجهاز، أو من
+  ملف Excel/CSV، أو يدويًا. الأسماء في الأجهزة كثيرًا ما تكون مقطوعة (8 أحرف في بعض الطرازات)، ويمكن
+  تصحيحها هنا.
+- **بلا تكرار**: سحب الفترة نفسها مرة أخرى لا يكرر أي بصمة.
+- **يعمل دون اتصال**: كل ما يُسحب يُحفظ محليًا، فيمكن التصدير والجهاز غير متصل.
+- **يحدّث نفسه**: يتحقق من وجود إصدار جديد على GitHub عند التشغيل (يمكن إيقاف ذلك من الإعدادات)،
+  ويثبّته بعد السؤال. يُتحقَّق من الملف المنزَّل مقابل البصمة الرقمية (Checksum) التي ينشرها GitHub.
+  يحتاج ذلك إلى اتصال بالإنترنت، والنسخة المحمولة تعرض رابط صفحة التنزيل فقط.
+- **لوحة المفاتيح**: F5 للسحب، Ctrl+E للتصدير، Ctrl+F للبحث. وتتذكر النافذة حجمها وآخر تبويب.
+- **النسخ الاحتياطي**: تُحفظ نسخة من قاعدة البيانات لكل يوم من آخر 7 أيام، وزر **نسخ احتياطي لقاعدة
+  البيانات…** في الإعدادات يحفظ نسخة في أي مكان. وإذا تلفت قاعدة البيانات تُنقل جانبًا ويُعرض استعادة
+  أحدث نسخة احتياطية.
+- العربية والإنجليزية (من اليمين إلى اليسار). الأرقام والتواريخ تُعرض دائمًا بالأرقام الغربية (0-9).
 
-## Install
+## التثبيت
 
-Download `ZK-Pull-Setup-<version>.exe` from the
-[releases](https://github.com/t1nk333r/zk-pull-desktop/releases) page and run it. No admin rights are
-needed. There is also a portable zip that runs without installing.
+نزّل `ZK-Pull-Setup-<version>.exe` من صفحة
+[الإصدارات](https://github.com/t1nk333r/zk-pull-desktop/releases) وشغّله. لا يحتاج إلى صلاحيات
+المسؤول. وتوجد أيضًا نسخة محمولة (ملف zip) تعمل دون تثبيت.
 
-The installer is not code-signed, so Windows SmartScreen shows *"Windows protected your PC"*. Click
-**More info**, then **Run anyway**. Updates installed from inside the app skip this.
+المثبّت غير موقّع رقميًا، لذلك يعرض Windows SmartScreen رسالة *"Windows protected your PC"*. اضغط
+**More info** ثم **Run anyway**. التحديثات التي تُثبَّت من داخل البرنامج لا تعرض هذه الرسالة.
 
-Version 0.1.0 has no updater: install a newer version over it once by hand (names and history are
-kept).
+الإصدار 0.1.0 لا يحتوي على التحديث التلقائي: ثبّت إصدارًا أحدث فوقه يدويًا مرة واحدة (تبقى الأسماء
+والسجلات محفوظة).
 
-If an update is interrupted (for example by antivirus) and the app no longer starts, run the latest
-`ZK-Pull-Setup-<version>.exe` by hand: it repairs the installation and keeps the data. When IT has
-installed the app "for all users", the app cannot update itself without admin rights and says so;
-IT then runs the new installer.
+إذا انقطع التحديث (بسبب برنامج مكافحة الفيروسات مثلًا) ولم يعد البرنامج يعمل، فشغّل أحدث
+`ZK-Pull-Setup-<version>.exe` يدويًا: يصلح التثبيت ويحافظ على البيانات. وإذا ثبّت قسم تقنية المعلومات
+البرنامج "لجميع المستخدمين"، فلا يستطيع البرنامج تحديث نفسه دون صلاحيات المسؤول وسيُعلمك بذلك، وعندها
+يشغّل قسم تقنية المعلومات المثبّت الجديد.
 
-The PC must be on the same network as the devices.
+يجب أن يكون الحاسوب على شبكة الأجهزة نفسها.
 
-## First launch
+## التشغيل الأول
 
-1. Choose English or Arabic (can be changed later in **Settings**).
-2. Add a device: a name, its IP address, port (4370) and comm key (0 unless one was set on the
-   device). **Test connection** shows the serial number and how many punches and users it holds.
-3. Import names from the device, or skip and do it later from the **People** tab.
+1. اختر العربية أو الإنجليزية (يمكن تغييرها لاحقًا من **الإعدادات**).
+2. أضف جهازًا: اسمًا، وعنوان IP، والمنفذ (4370)، ومفتاح الاتصال (0 ما لم يُضبط مفتاح في الجهاز).
+   زر **اختبار الاتصال** يعرض الرقم التسلسلي وعدد البصمات والمستخدمين في الجهاز.
+3. استورد الأسماء من الجهاز، أو تخطَّ ذلك وافعله لاحقًا من تبويب **الموظفون**.
 
-Every step can be skipped.
+يمكن تخطي أي خطوة.
 
-## Data
+## البيانات
 
-Everything is kept in `%LOCALAPPDATA%\ZK Pull`:
+تُحفظ كل البيانات في `%LOCALAPPDATA%\ZK Pull`:
 
-- `zk_pull.db`: devices, names, pulled punches and settings (SQLite).
-- `zk_pull.log`: what was pulled and any errors. Send this file when reporting a problem.
+- `zk_pull.db`: الأجهزة والأسماء والبصمات المسحوبة والإعدادات (SQLite).
+- `zk_pull.log`: ما سُحب وأي أخطاء. أرسل هذا الملف عند الإبلاغ عن مشكلة.
 
-- `backups\`: a copy of the database for each of the last 7 days.
+- `backups\`: نسخة من قاعدة البيانات لكل يوم من آخر 7 أيام.
 
-Uninstalling leaves this folder in place. **Settings → Back up database…** saves a copy anywhere; to
-restore one, close ZK Pull and copy it over `zk_pull.db`.
+إلغاء التثبيت لا يحذف هذا المجلد. **الإعدادات ← نسخ احتياطي لقاعدة البيانات…** يحفظ نسخة في أي مكان،
+ولاستعادتها أغلق ZK Pull وانسخها مكان `zk_pull.db`.
 
-## Security
+## الأمان
 
-- Devices are only read, and are treated as untrusted: a device that stops answering, sends absurd
-  amounts of data or impossible dates cannot hang or crash the app; bad records are left out and
-  counted.
-- Names and errors from devices and files are always shown as plain text, never as HTML.
-- The comm key only proves the app to the device; anyone on the network can read a device's serial
-  number and send punches from its IP address. Keep the devices on their own network or VLAN, or give
-  them fixed ARP entries, if that matters.
-- Updates are checked against GitHub's published SHA-256, only from this repository's releases, and
-  never downgrade.
+- البرنامج يقرأ من الأجهزة فقط، ولا يثق بما ترسله: الجهاز الذي يتوقف عن الاستجابة أو يرسل كميات بيانات
+  غير معقولة أو تواريخ مستحيلة لا يستطيع تجميد البرنامج أو إيقافه، وتُستبعد السجلات التالفة ويُذكر عددها.
+- الأسماء والأخطاء القادمة من الأجهزة والملفات تُعرض دائمًا نصًا عاديًا وليس HTML.
+- مفتاح الاتصال يثبت هوية البرنامج للجهاز فقط؛ ويستطيع أي شخص على الشبكة قراءة الرقم التسلسلي للجهاز
+  وإرسال بصمات من عنوانه. إذا كان ذلك مهمًا فضع الأجهزة على شبكة أو VLAN خاصة بها، أو ثبّت عناوينها
+  في جدول ARP.
+- التحديثات يُتحقَّق منها مقابل بصمة SHA-256 التي ينشرها GitHub، ومن إصدارات هذا المستودع فقط، ولا
+  يُثبَّت إصدار أقدم أبدًا.
 
-## Settings
+## الإعدادات
 
-| Setting | Default | |
+| الإعداد | الافتراضي | |
 |---|---|---|
-| Language | chosen on first launch | English or Arabic |
-| Export layout | Punch log | or Daily summary; chosen on the Attendance tab |
-| Export column headers | English | English headers are what payroll and ERP imports usually expect |
-| Default export folder | your home folder | then the last folder used |
-| Open file after export | on | the tick box next to **Export** |
-| Check for updates at startup | on | **Check for updates** checks now |
+| اللغة | تُختار عند التشغيل الأول | العربية أو الإنجليزية |
+| شكل التصدير | سجل البصمات | أو ملخص يومي، ويُختار من تبويب الحضور |
+| لغة عناوين الأعمدة في التصدير | الإنجليزية | أنظمة الرواتب وERP تتوقع عادةً عناوين إنجليزية |
+| مجلد التصدير الافتراضي | مجلد المستخدم | ثم آخر مجلد استُخدم |
+| فتح الملف بعد التصدير | مفعّل | مربع الاختيار بجانب زر **تصدير** |
+| التحقق من التحديثات عند التشغيل | مفعّل | زر **التحقق من التحديثات** يتحقق فورًا |
 
-CSV files opened in Excel lose leading zeros in employee IDs (`007` becomes `7`); use Excel (.xlsx)
-when IDs have them.
+ملفات CSV عند فتحها في Excel تفقد الأصفار في بداية أرقام الموظفين (`007` تصبح `7`)؛ استخدم Excel
+(.xlsx) إذا كانت الأرقام تبدأ بأصفار.
 
 ## Linux
 
-The Windows build is not tested under Wine. On Linux, run the app from source instead (see
-Development); it is the same app.
+نسخة Windows لم تُختبر على Wine. على Linux شغّل البرنامج من الشيفرة المصدرية بدلًا من ذلك (انظر
+قسم التطوير)، فهو البرنامج نفسه.
 
-## Development
+## التطوير
 
-Requires [uv](https://docs.astral.sh/uv/).
+يتطلب [uv](https://docs.astral.sh/uv/).
+
+</div>
 
 ```bash
 uv sync
@@ -124,30 +127,13 @@ uv run pytest              # tests (set QT_QPA_PLATFORM=offscreen without a disp
 uv run ruff check . && uv run ruff format --check .
 ```
 
-| Module | |
-|---|---|
-| `device.py` | Reads punches and users from a device (pyzk). Read-only. |
-| `store.py` | SQLite: devices, people, punches, settings. |
-| `export.py` | CSV / XLSX writers, punch log and daily summary. |
-| `i18n.py` | English and Arabic texts. |
-| `periods.py` | Quick date ranges. |
-| `worker.py` | Runs device I/O off the UI thread. |
-| `updater.py` | Checks GitHub Releases, downloads and checks the installer. |
-| `app.py`, `*_tab.py`, `dialogs.py` | The Qt (PySide6) interface. |
+<div dir="rtl">
 
-## Release
+تفاصيل الوحدات وخطوات إصدار نسخة جديدة موجودة في [النسخة الإنجليزية](README.en.md).
 
-1. Set `__version__` in `src/zk_pull_desktop/__init__.py`.
-2. Add a `## <version>` section to [CHANGELOG.md](CHANGELOG.md), in English and Arabic: it becomes
-   the release description.
-3. Commit to `main`, then tag `v<version>` and push the tag.
+## الترخيص
 
-GitHub Actions (Windows) runs the tests, builds the app with PyInstaller and wraps it with Inno
-Setup. The release job then checks that the tag is on `main` and that the changelog has the
-version, and publishes the installer and portable zip. It never replaces the files of an existing
-release, because installed copies trust what they download; fix a bad release with a new version.
+MIT. أيقونة البرنامج "Fingerprint" من [Icons8](https://icons8.com)، وتُستخدم وفق ترخيصهم المجاني الذي
+يشترط وضع هذا الرابط.
 
-## License
-
-MIT. The app icon is "Fingerprint" by [Icons8](https://icons8.com), used under their free licence,
-which requires this link.
+</div>
