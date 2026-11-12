@@ -1,0 +1,43 @@
+[project]
+name = "zk-pull-desktop"
+dynamic = ["version"]
+description = "Pull attendance from ZKTeco devices over the LAN and export it to Excel or CSV"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+	"pyside6>=6.8",
+	"pyzk>=0.9",
+	"openpyxl>=3.1",
+]
+
+[project.gui-scripts]
+zk-pull = "zk_pull_desktop.app:main"
+
+[dependency-groups]
+dev = [
+	"pytest>=8",
+	"ruff>=0.8",
+	"pyinstaller>=6.11",
+]
+
+[tool.hatch.version]
+path = "src/zk_pull_desktop/__init__.py"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.format]
+indent-style = "tab"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["W191", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
