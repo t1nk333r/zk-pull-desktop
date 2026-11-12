@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from . import device as zk
 from .i18n import LANGUAGES, tr
 from .store import Device, Store
-from .worker import run_in_background
+from .worker import busy, run_in_background
 
 
 class LanguageDialog(QDialog):
@@ -151,6 +151,9 @@ class _DevicePage(QWizardPage):
 		layout.addLayout(self.form)
 
 	def validatePage(self):
+		if busy():  # wait for Test, so the serial it reads is saved with the device
+			QMessageBox.information(self, tr("app_title"), tr("busy"))
+			return False
 		if self.form.is_empty():
 			return True  # skipped
 		if not self.form.is_valid():
@@ -210,3 +213,11 @@ class FirstRunWizard(QWizard):
 		self.setButtonText(QWizard.WizardButton.CancelButton, tr("skip"))
 		self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage)
 		self.setOption(QWizard.WizardOption.NoBackButtonOnLastPage)
+
+	def done(self, result):
+		# Finish, Skip and the close button all end here. Closing while the device is being read
+		# would drop what it returns (the names being imported).
+		if busy():
+			QMessageBox.information(self, tr("app_title"), tr("busy"))
+			return
+		super().done(result)

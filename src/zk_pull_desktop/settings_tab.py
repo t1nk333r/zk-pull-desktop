@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+	QCheckBox,
 	QComboBox,
 	QFileDialog,
 	QFormLayout,
@@ -23,10 +24,13 @@ from . import __version__
 from .dialogs import DeviceDialog
 from .i18n import LANGUAGES, language, tr
 from .store import Store
+from .worker import busy
 
 
 class SettingsTab(QWidget):
-	def __init__(self, store: Store, data_dir: Path, on_devices_changed, on_language_changed):
+	def __init__(
+		self, store: Store, data_dir: Path, on_devices_changed, on_language_changed, on_check_updates
+	):
 		super().__init__()
 		self.store = store
 		self.on_devices_changed = on_devices_changed
@@ -80,7 +84,9 @@ class SettingsTab(QWidget):
 		folder_row = QHBoxLayout()
 		folder_row.addWidget(self.folder, 1)
 		folder_row.addWidget(browse)
-		data_button = QPushButton(str(data_dir))
+		data_button = QPushButton(
+			"\u200e" + str(data_dir)
+		)  # left-to-right mark: paths start with "/" or "C:"
 		data_button.setFlat(True)
 		data_button.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
 		data_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_dir))))
@@ -92,7 +98,17 @@ class SettingsTab(QWidget):
 		form.addRow(tr("header_language"), self.header_language)
 		form.addRow(tr("export_folder"), folder_row)
 		form.addRow(tr("data_folder"), data_button)
-		form.addRow("", QLabel(f"ZK Pull {__version__}"))
+		self.check_updates = QCheckBox(tr("check_updates_startup"))
+		self.check_updates.setChecked(store.get("check_updates", "1") == "1")
+		self.check_updates.toggled.connect(lambda on: store.set("check_updates", "1" if on else "0"))
+		check_now = QPushButton(tr("check_updates_now"))
+		check_now.clicked.connect(lambda: on_check_updates(silent=False))
+		updates_row = QHBoxLayout()
+		updates_row.addWidget(QLabel(f"ZK Pull {__version__}"))
+		updates_row.addWidget(self.check_updates)
+		updates_row.addStretch()
+		updates_row.addWidget(check_now)
+		form.addRow(tr("updates"), updates_row)
 
 		layout = QVBoxLayout(self)
 		layout.addWidget(devices_box, 1)
@@ -123,17 +139,18 @@ class SettingsTab(QWidget):
 		if dialog.exec():
 			self.store.save_device(dialog.device())
 			self._devices_changed()
+		dialog.deleteLater()
 
 	def edit_device(self):
 		d = self._selected()
 		if d is None:
 			return
+		d = self.store.device(d.id)  # fresh: a pull may have set the serial since the list was shown
 		dialog = DeviceDialog(self, d)
 		if dialog.exec():
-			edited = dialog.device()
-			edited.last_pull = d.last_pull
-			self.store.save_device(edited)
+			self.store.save_device(dialog.device())
 			self._devices_changed()
+		dialog.deleteLater()
 
 	def delete_device(self):
 		d = self._selected()
@@ -154,7 +171,18 @@ class SettingsTab(QWidget):
 			self.folder.setText(folder)
 			self.store.set("export_folder", folder)
 
+	def showEvent(self, event):
+		super().showEvent(event)
+		self.reload_devices()  # serial and last pull change with every pull
+
 	def _language_changed(self):
 		code = self.language.currentData()
+		if busy():
+			# The window is rebuilt in the new language; a running pull would lose its window.
+			self.language.blockSignals(True)
+			self.language.setCurrentIndex(self.language.findData(language()))
+			self.language.blockSignals(False)
+			QMessageBox.information(self, tr("app_title"), tr("busy"))
+			return
 		self.store.set("language", code)
 		self.on_language_changed(code)

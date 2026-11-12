@@ -21,22 +21,27 @@ TEXTS = {
 	"pulling": ("Pulling from {device}…", "جارٍ السحب من {device}…"),
 	"pull_done": (
 		"{device}: {total} punches on the device, {new} new.",
-		"{device}: {total} بصمة على الجهاز، منها {new} جديدة.",
+		"{device}: عدد البصمات على الجهاز {total}، منها {new} جديدة.",
 	),
 	"pull_failed": ("Could not pull from {device}: {error}", "تعذّر السحب من {device}: {error}"),
 	"no_devices": (
 		"No devices yet. Add one in Settings.",
 		"لا توجد أجهزة بعد. أضف جهازًا من الإعدادات.",
 	),
-	"shown": ("{count} punches from {start} to {end}", "{count} بصمة من {start} إلى {end}"),
+	"shown": ("{count} punches from {start} to {end}", "عدد البصمات: {count} (من {start} إلى {end})"),
 	"unnamed_hint": (
-		"{count} user IDs have no name yet (People tab).",
-		"{count} من المعرّفات بلا اسم بعد (تبويب الموظفين).",
+		"{count} employee IDs have no name yet (People tab).",
+		"عدد أرقام الموظفين بلا اسم: {count} (تبويب الموظفين).",
 	),
 	"nothing_to_export": ("There are no punches in this period.", "لا توجد بصمات في هذه الفترة."),
-	"exported": ("Saved {count} rows to {path}", "تم حفظ {count} صفًا في {path}"),
+	"exported": ("Saved {count} rows to {path}", "تم حفظ الملف في {path} (عدد الصفوف: {count})"),
 	"export_failed": ("Could not save the file: {error}", "تعذّر حفظ الملف: {error}"),
 	"open_folder": ("Open folder", "فتح المجلد"),
+	"open_after_export": ("Open file after export", "فتح الملف بعد التصدير"),
+	"busy": (
+		"Please wait: the device is still being read.",
+		"يرجى الانتظار: لا تزال قراءة الجهاز جارية.",
+	),
 	# Columns (also used as export headers)
 	"col_user_id": ("Employee ID", "رقم الموظف"),
 	"col_name": ("Name", "الاسم"),
@@ -51,26 +56,26 @@ TEXTS = {
 	"col_hours": ("Hours", "الساعات"),
 	"col_count": ("Punches", "عدد البصمات"),
 	# Punch types (device state keys)
-	"punch_0": ("Check-in", "دخول"),
-	"punch_1": ("Check-out", "خروج"),
+	"punch_0": ("Check-in", "حضور"),
+	"punch_1": ("Check-out", "انصراف"),
 	"punch_2": ("Break-out", "بداية استراحة"),
 	"punch_3": ("Break-in", "نهاية استراحة"),
 	"punch_4": ("Overtime-in", "دخول عمل إضافي"),
 	"punch_5": ("Overtime-out", "خروج عمل إضافي"),
 	"punch_other": ("Other ({code})", "أخرى ({code})"),
 	# Verification methods
-	"verify_0": ("Password", "كلمة مرور"),
-	"verify_1": ("Fingerprint", "بصمة إصبع"),
-	"verify_2": ("Card", "بطاقة"),
-	"verify_15": ("Face", "الوجه"),
+	"verify_0": ("Password", "كلمة المرور"),
+	"verify_1": ("Fingerprint", "بصمة الإصبع"),
+	"verify_2": ("Card", "البطاقة"),
+	"verify_15": ("Face", "بصمة الوجه"),
 	"verify_other": ("Other ({code})", "أخرى ({code})"),
 	# People tab
 	"add": ("Add", "إضافة"),
 	"delete": ("Delete", "حذف"),
 	"import_device": ("Import names from device", "استيراد الأسماء من الجهاز"),
 	"import_file": ("Import from file…", "استيراد من ملف…"),
-	"add_unnamed": ("Add IDs without a name", "إضافة المعرّفات بلا اسم"),
-	"imported": ("{count} names added or updated.", "تمت إضافة أو تحديث {count} اسمًا."),
+	"add_unnamed": ("Add IDs without a name", "إضافة الأرقام التي بلا اسم"),
+	"imported": ("{count} names added or updated.", "عدد الأسماء المضافة أو المحدّثة: {count}."),
 	"import_failed": ("Import failed: {error}", "فشل الاستيراد: {error}"),
 	"import_file_hint": (
 		"The file needs two columns: employee ID, then name (a header row is fine).",
@@ -91,7 +96,7 @@ TEXTS = {
 	"test": ("Test connection", "اختبار الاتصال"),
 	"test_ok": (
 		"Connected. Serial {serial}, {punches} punches, {users} users.",
-		"تم الاتصال. الرقم التسلسلي {serial}، {punches} بصمة، {users} مستخدم.",
+		"تم الاتصال. الرقم التسلسلي {serial}، عدد البصمات {punches}، عدد المستخدمين {users}.",
 	),
 	"test_failed": ("Could not connect: {error}", "تعذّر الاتصال: {error}"),
 	"confirm_delete_device": (
@@ -108,6 +113,25 @@ TEXTS = {
 	"browse": ("Browse…", "استعراض…"),
 	"data_folder": ("Data folder", "مجلد البيانات"),
 	"invalid_device": ("Name and IP address are required.", "الاسم وعنوان IP مطلوبان."),
+	# Updates
+	"updates": ("Updates", "التحديثات"),
+	"check_updates_startup": ("Check for updates at startup", "التحقق من التحديثات عند التشغيل"),
+	"check_updates_now": ("Check for updates", "التحقق من التحديثات"),
+	"update_available": (
+		"Version {version} is available (this is {current}). Install it now? ZK Pull will close and "
+		"restart; your data is kept.",
+		"الإصدار {version} متاح (الإصدار الحالي {current}). هل تريد تثبيته الآن؟ سيُغلق ZK Pull "
+		"ويُعاد تشغيله، وتبقى بياناتك محفوظة.",
+	),
+	"update_portable": (
+		"Version {version} is available (this is {current}). Open the download page?",
+		"الإصدار {version} متاح (الإصدار الحالي {current}). هل تريد فتح صفحة التنزيل؟",
+	),
+	"update_none": ("ZK Pull is up to date (version {version}).", "ZK Pull محدّث (الإصدار {version})."),
+	"update_failed": ("Could not update: {error}", "تعذّر التحديث: {error}"),
+	"update_downloading": ("Downloading version {version}…", "جارٍ تنزيل الإصدار {version}…"),
+	"install": ("Install", "تثبيت"),
+	"later": ("Later", "لاحقًا"),
 	# First run
 	"welcome_title": ("Welcome to ZK Pull", "مرحبًا بك في ZK Pull"),
 	"welcome_text": (
@@ -123,7 +147,7 @@ TEXTS = {
 		"from the People tab.",
 		"الأسماء تجعل ملفات التصدير مفهومة. يمكنك استيرادها الآن من الجهاز، أو لاحقًا من تبويب الموظفين.",
 	),
-	"skip": ("Skip", "تخطٍّ"),
+	"skip": ("Skip", "تخطي"),
 	"next": ("Next", "التالي"),
 	"finish": ("Finish", "إنهاء"),
 	"cancel": ("Cancel", "إلغاء"),
@@ -173,18 +197,21 @@ def isolate(value):
 	return f"\u2068{value}\u2069" if value != "" else value
 
 
-def tr(key, lang=None, **values):
+def tr(key, lang=None, plain=False, **values):
+	"""The text in lang (default: the UI language). plain leaves out the direction marks, for files."""
 	en, ar = TEXTS[key]
 	if (lang or _current) != "ar":
 		return en.format(**values) if values else en
+	if plain:
+		return ar.format(**values) if values else ar
 	return ar.format(**{k: isolate(v) for k, v in values.items()}) if values else ar
 
 
-def punch_label(code, lang=None):
+def punch_label(code, lang=None, plain=False):
 	key = f"punch_{code}"
-	return tr(key, lang) if key in TEXTS else tr("punch_other", lang, code=code)
+	return tr(key, lang) if key in TEXTS else tr("punch_other", lang, plain, code=code)
 
 
-def verify_label(code, lang=None):
+def verify_label(code, lang=None, plain=False):
 	key = f"verify_{code}"
-	return tr(key, lang) if key in TEXTS else tr("verify_other", lang, code=code)
+	return tr(key, lang) if key in TEXTS else tr("verify_other", lang, plain, code=code)

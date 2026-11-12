@@ -63,8 +63,25 @@ def test_xlsx_daily_has_real_dates_and_arabic_headers(tmp_path):
 	assert ws["D2"].value.date() == date(2026, 11, 1)
 	assert ws["D2"].number_format == "yyyy-mm-dd"
 	assert ws["E2"].value == time(8) and ws["F2"].value == time(17, 15)
-	assert ws["B3"].value == "'=HYPERLINK(1)"  # stored as text, not a formula
+	assert ws["B3"].value == "=HYPERLINK(1)" and ws["B3"].data_type == "s"  # text, not a formula
 	assert ws.freeze_panes == "A2"
+
+
+def test_xlsx_keeps_names_as_typed_and_drops_control_characters(tmp_path):
+	path = tmp_path / "out.xlsx"
+	rows = [row("1", "2026-11-01 08:00:00", "-Ali-"), row("2\x01", "2026-11-01 08:00:00", "Sa\x02ra")]
+	export.write(path, rows, "xlsx", "log", "en")
+	ws = load_workbook(path).active
+	assert ws["B2"].value == "-Ali-"  # no visible apostrophe: only "=" can start a formula in XLSX
+	assert (ws["A3"].value, ws["B3"].value) == ("2", "Sara")
+
+
+def test_arabic_export_has_no_hidden_direction_marks(tmp_path):
+	path = tmp_path / "out.csv"
+	export.write(path, [row("1", "2026-11-01 08:00:00", kind=255)], "csv", "log", "ar")
+	text = path.read_text(encoding="utf-8-sig")
+	assert "أخرى (255)" in text
+	assert "\u2068" not in text and "\u2069" not in text
 
 
 def test_default_filename():
@@ -82,7 +99,7 @@ def test_every_text_has_both_languages_with_the_same_placeholders():
 
 def test_unknown_codes_are_labelled():
 	assert i18n.punch_label(9, "en") == "Other (9)"
-	assert i18n.verify_label(15, "ar") == "الوجه"
+	assert i18n.verify_label(15, "ar") == "بصمة الوجه"
 
 
 def test_periods():
@@ -107,3 +124,17 @@ def test_read_names_file_csv_and_xlsx(tmp_path):
 	xlsx_path = tmp_path / "names.xlsx"
 	wb.save(xlsx_path)
 	assert read_names_file(xlsx_path) == {"5": "Omar", "6": "Huda"}
+
+
+def test_read_names_file_arabic_excel_csv(tmp_path):
+	path = tmp_path / "names.csv"
+	path.write_bytes("رقم الموظف,الاسم\n101,محمد\n".encode("cp1256"))  # Excel on Arabic Windows
+	assert read_names_file(path) == {"101": "محمد"}
+
+
+def test_read_names_file_header_detection(tmp_path):
+	path = tmp_path / "names.csv"
+	path.write_text("A101,Ali\nA102,Omar\n", encoding="utf-8")  # letter IDs, no header
+	assert read_names_file(path) == {"A101": "Ali", "A102": "Omar"}
+	path.write_text("\n,\nEmployee ID,Name\n7,Huda\n", encoding="utf-8")  # blank rows, then the header
+	assert read_names_file(path) == {"7": "Huda"}

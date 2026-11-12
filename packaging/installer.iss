@@ -25,9 +25,15 @@ SetupIconFile=icon.ico
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\ZK Pull.exe
+; The updater closes the app itself; this covers the app being open when someone runs setup by hand.
+CloseApplications=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+
+[InstallDelete]
+; A new version may ship different Qt files; leftovers from the old one can make Qt load mismatched plugins.
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "..\dist\ZK Pull\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -38,6 +44,8 @@ Name: "{autodesktop}\ZK Pull"; Filename: "{app}\ZK Pull.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\ZK Pull.exe"; Description: "{cm:LaunchProgram,ZK Pull}"; Flags: nowait postinstall skipifsilent
+; The in-app updater runs this installer with /SILENT; start the new version when it is done.
+Filename: "{app}\ZK Pull.exe"; Flags: nowait; Check: WizardSilent
 
 ; The database and log in %LOCALAPPDATA%\ZK Pull are left in place on uninstall: they hold the
 ; pulled attendance and the names HR typed in.

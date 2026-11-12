@@ -18,11 +18,15 @@ never changes users and never sets the clock.
   - *Punch log*: one row per punch (employee ID, name, department, date, time, punch type, verified
     by, device).
   - *Daily summary*: one row per employee per day (first punch, last punch, hours, number of punches).
+  - The file opens by itself after export (a tick box next to **Export** turns this off).
 - **Names**: a small list of employee ID → name and department. Fill it from the device's own user
   list, from an Excel/CSV file, or by hand. Device names are often cut short (8 characters on some
   models), so they can be corrected here.
 - **No duplicates**: pulling the same period again stores nothing twice.
 - **Works offline**: everything pulled is kept locally, so exports work without the device.
+- **Updates itself**: checks GitHub for a new version at startup (can be turned off in Settings) and
+  installs it after asking. The download is checked against the checksum GitHub publishes. This needs
+  internet access; the portable zip only links to the download page.
 - English and Arabic (right to left). Numbers and dates always use Western digits (0-9).
 
 ## Install
@@ -32,7 +36,9 @@ Download `ZK-Pull-Setup-<version>.exe` from the
 needed. There is also a portable zip that runs without installing.
 
 The installer is not code-signed, so Windows SmartScreen shows *"Windows protected your PC"*. Click
-**More info**, then **Run anyway**. This happens once per version.
+**More info**, then **Run anyway**. Updates installed from inside the app skip this.
+
+Version 0.1.0 has no updater: install 0.2.0 over it once by hand (names and history are kept).
 
 The PC must be on the same network as the devices.
 
@@ -62,6 +68,16 @@ Uninstalling leaves this folder in place. Back it up to keep the names and histo
 | Export layout | Punch log | or Daily summary |
 | Export column headers | English | English headers are what payroll and ERP imports usually expect |
 | Default export folder | your home folder | then the last folder used |
+| Open file after export | on | the tick box next to **Export** |
+| Check for updates at startup | on | **Check for updates** checks now |
+
+CSV files opened in Excel lose leading zeros in employee IDs (`007` becomes `7`); use Excel (.xlsx)
+when IDs have them.
+
+## Linux
+
+The Windows build is not tested under Wine. On Linux, run the app from source instead (see
+Development); it is the same app.
 
 ## Development
 
@@ -82,6 +98,7 @@ uv run ruff check . && uv run ruff format --check .
 | `i18n.py` | English and Arabic texts. |
 | `periods.py` | Quick date ranges. |
 | `worker.py` | Runs device I/O off the UI thread. |
+| `updater.py` | Checks GitHub Releases, downloads and checks the installer. |
 | `app.py`, `*_tab.py`, `dialogs.py` | The Qt (PySide6) interface. |
 
 ## Release

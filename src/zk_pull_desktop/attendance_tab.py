@@ -6,6 +6,7 @@ from PySide6.QtCore import QAbstractTableModel, QDate, QModelIndex, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
 	QButtonGroup,
+	QCheckBox,
 	QComboBox,
 	QDateEdit,
 	QFileDialog,
@@ -25,7 +26,7 @@ from . import export
 from .i18n import is_rtl, isolate, punch_label, tr, verify_label
 from .periods import PERIODS, period_range
 from .store import PunchRow, Store
-from .worker import run_in_background
+from .worker import busy, run_in_background
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +98,8 @@ class AttendanceTab(QWidget):
 		self.fmt_group.addButton(self.csv)
 		(self.csv if store.get("format", "xlsx") == "csv" else self.xlsx).setChecked(True)
 		self.export_button = QPushButton(tr("export"))
+		self.open_after = QCheckBox(tr("open_after_export"))
+		self.open_after.setChecked(store.get("open_after_export", "1") == "1")
 
 		self.model = PunchModel()
 		self.table = QTableView()
@@ -125,6 +128,7 @@ class AttendanceTab(QWidget):
 		actions.addWidget(QLabel(tr("format")))
 		actions.addWidget(self.xlsx)
 		actions.addWidget(self.csv)
+		actions.addWidget(self.open_after)
 		actions.addWidget(self.export_button)
 
 		layout = QVBoxLayout(self)
@@ -141,6 +145,7 @@ class AttendanceTab(QWidget):
 		self.device.currentIndexChanged.connect(self.refresh)
 		self.pull_button.clicked.connect(self.pull)
 		self.export_button.clicked.connect(self.export)
+		self.open_after.toggled.connect(lambda on: store.set("open_after_export", "1" if on else "0"))
 		self.fmt_group.buttonClicked.connect(lambda _: store.set("format", self.fmt()))
 
 	def _date_edit(self):
@@ -197,7 +202,7 @@ class AttendanceTab(QWidget):
 		start, end = self.range()
 		serials = None  # all devices: every punch, including ones from devices removed since
 		if self.device.currentData() is not None:
-			serials = [d.serial for d in self.selected_devices() if d.serial]
+			serials = self.store.serials([self.device.currentData()])  # every serial it has reported
 		return self.store.punches(start, end, serials)
 
 	def refresh(self):
@@ -216,6 +221,9 @@ class AttendanceTab(QWidget):
 	# Pull
 
 	def pull(self):
+		if busy():
+			self.status(tr("busy"))
+			return
 		self.queue = self.selected_devices()
 		if not self.queue:
 			QMessageBox.information(self, tr("app_title"), tr("no_devices"))
@@ -270,11 +278,19 @@ class AttendanceTab(QWidget):
 			path = path.with_name(path.name + f".{fmt}")
 		try:
 			count = export.write(path, rows, fmt, layout, self.store.get("header_language", "en"))
-		except OSError as e:
+		except OSError as e:  # most often: the file is open in Excel
 			log.exception("Export to %s failed", path)
 			QMessageBox.warning(self, tr("error"), tr("export_failed", error=e.strerror or e))
 			return
+		except Exception as e:  # never lose the window over one bad value
+			log.exception("Export to %s failed", path)
+			QMessageBox.warning(self, tr("error"), tr("export_failed", error=e))
+			return
 		self.store.set("export_folder", str(path.parent))
+		log.info("Exported %d rows to %s", count, path)
+		if self.open_after.isChecked() and QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+			self.status(tr("exported", count=count, path=path))
+			return
 		box = QMessageBox(self)
 		box.setWindowTitle(tr("app_title"))
 		box.setText(tr("exported", count=count, path=path))

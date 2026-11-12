@@ -11,6 +11,7 @@ from datetime import date, datetime, time
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
@@ -90,8 +91,8 @@ def _table(punches, layout, lang):
 				p.department,
 				p.timestamp.date(),
 				p.timestamp.time(),
-				punch_label(p.punch, lang),
-				verify_label(p.verify, lang),
+				punch_label(p.punch, lang, plain=True),
+				verify_label(p.verify, lang, plain=True),
 				p.device,
 			]
 			for p in punches
@@ -99,8 +100,12 @@ def _table(punches, layout, lang):
 	return headers, rows
 
 
-def _safe_text(value):
-	# Names are typed by people; a spreadsheet must not run one that looks like a formula.
+def _clean(value):
+	return ILLEGAL_CHARACTERS_RE.sub("", value) if isinstance(value, str) else value
+
+
+def _safe_csv_text(value):
+	# Names are typed by people; Excel must not run one that looks like a formula when opening the CSV.
 	if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
 		return "'" + value
 	return value
@@ -115,7 +120,7 @@ def _csv_value(value):
 		return value.strftime("%H:%M:%S")
 	if value is None:
 		return ""
-	return _safe_text(value)
+	return _safe_csv_text(_clean(value))
 
 
 def write(path: Path, punches: list[PunchRow], fmt="xlsx", layout="log", lang="en") -> int:
@@ -140,7 +145,11 @@ def _write_xlsx(path, headers, rows, layout, lang):
 	for cell in ws[1]:
 		cell.font = Font(bold=True)
 	for row in rows:
-		ws.append([_safe_text(v) for v in row])
+		ws.append([_clean(v) for v in row])
+		for cell in ws[ws.max_row]:
+			# openpyxl turns text starting with "=" into a formula; keep names as text, unchanged.
+			if cell.data_type == "f":
+				cell.data_type = "s"
 
 	formats = {date: "yyyy-mm-dd", time: "hh:mm:ss"}
 	for column in ws.iter_cols(min_row=2):

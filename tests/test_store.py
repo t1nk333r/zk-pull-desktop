@@ -88,3 +88,21 @@ def test_settings_round_trip(store):
 	store.set("layout", "daily")
 	store.set("layout", "log")
 	assert store.get("layout") == "log"
+
+
+def test_device_keeps_punches_from_an_earlier_serial(store):
+	device_id = store.save_device(Device(None, "Main", "10.0.0.5"))
+	store.mark_pulled(device_id, "SN1", datetime(2026, 11, 1, 9))
+	store.add_punches([punch("1", "2026-11-01 08:00:00", "SN1")])
+	store.mark_pulled(device_id, "SN2", datetime(2026, 11, 2, 9))  # mainboard replaced
+	store.add_punches([punch("1", "2026-11-02 08:00:00", "SN2")])
+	rows = store.punches(date(2026, 11, 1), date(2026, 11, 2), store.serials([device_id]))
+	assert [r.device for r in rows] == ["Main", "Main"]
+
+
+def test_editing_a_device_keeps_the_serial_from_the_last_pull(store):
+	device_id = store.save_device(Device(None, "Main", "10.0.0.5"))
+	store.mark_pulled(device_id, "SN1", datetime(2026, 11, 1, 9))
+	store.save_device(Device(device_id, "Main gate", "10.0.0.6"))  # edited without Test
+	d = store.device(device_id)
+	assert (d.name, d.ip, d.serial, d.last_pull) == ("Main gate", "10.0.0.6", "SN1", "2026-11-01 09:00:00")

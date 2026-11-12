@@ -21,9 +21,29 @@ from PySide6.QtWidgets import (
 from . import device as zk
 from .i18n import tr
 from .store import Person, Store
-from .worker import run_in_background
+from .worker import busy, run_in_background
 
 log = logging.getLogger(__name__)
+
+
+HEADER_WORDS = ("id", "no", "code", "emp", "رقم", "كود", "الرقم", "الموظف")
+
+
+def _csv_text(path: Path) -> str:
+	"""UTF-8 first; Excel's "CSV (Comma delimited)" on Arabic Windows saves Windows-1256."""
+	data = path.read_bytes()
+	try:
+		return data.decode("utf-8-sig")
+	except UnicodeDecodeError:
+		return data.decode("cp1256")
+
+
+def _is_header(first, rest) -> bool:
+	"""A first row is a header if it names its columns, or if it is the only one without a numeric ID."""
+	cell = first[0].casefold() if first else ""
+	if cell.isdigit():
+		return False
+	return any(word in cell for word in HEADER_WORDS) or any(r and r[0].isdigit() for r in rest)
 
 
 def read_names_file(path: Path) -> dict[str, str]:
@@ -35,15 +55,15 @@ def read_names_file(path: Path) -> dict[str, str]:
 		]
 		wb.close()
 	else:
-		with open(path, newline="", encoding="utf-8-sig") as f:
-			rows = [row[:2] for row in csv.reader(f)]
-	if rows and rows[0] and not rows[0][0].strip().isdigit():
-		rows = rows[1:]  # header
+		rows = [row[:2] for row in csv.reader(_csv_text(path).splitlines())]
+	rows = [[cell.strip() for cell in row] for row in rows if any(cell.strip() for cell in row)]
+	if rows and _is_header(rows[0], rows[1:]):
+		rows = rows[1:]
 	names = {}
 	for row in rows:
 		if len(row) < 2:
 			continue
-		user_id, name = row[0].strip(), row[1].strip()
+		user_id, name = row[0], row[1]
 		if user_id.endswith(".0") and user_id[:-2].isdigit():  # Excel stored the ID as a number
 			user_id = user_id[:-2]
 		if user_id and name:
@@ -153,7 +173,7 @@ class PeopleTab(QWidget):
 
 	def delete(self):
 		row = self.table.currentRow()
-		if row < 0:
+		if row < 0 or self.table.isRowHidden(row):  # the selection may be hidden by the search filter
 			return
 		user_id = self.table.item(row, self.ID).text()
 		name = self.table.item(row, self.NAME).text() or user_id
@@ -172,6 +192,9 @@ class PeopleTab(QWidget):
 			self._edit_name_of(missing[0])
 
 	def import_device(self):
+		if busy():
+			self.status(tr("busy"))
+			return
 		devices = self.store.devices()
 		if not devices:
 			QMessageBox.information(self, tr("app_title"), tr("no_devices"))
@@ -190,8 +213,9 @@ class PeopleTab(QWidget):
 		)
 
 	def _device_users(self, users):
+		count = self.store.import_names({u.user_id: u.name for u in users})  # save first, then update the UI
 		self.buttons["import_device"].setEnabled(True)
-		self._changed(self.store.import_names({u.user_id: u.name for u in users}))
+		self._changed(count)
 
 	def _device_failed(self, message):
 		self.buttons["import_device"].setEnabled(True)

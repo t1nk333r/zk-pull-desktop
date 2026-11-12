@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS punches (
 	PRIMARY KEY (serial, user_id, ts)
 );
 CREATE INDEX IF NOT EXISTS punches_ts ON punches (ts);
+-- Every serial number a device has reported. A replaced mainboard brings a new serial, and the
+-- punches pulled under the old one still belong to the device.
+CREATE TABLE IF NOT EXISTS device_serials (
+	device_id INTEGER NOT NULL,
+	serial TEXT NOT NULL,
+	PRIMARY KEY (device_id, serial)
+);
+INSERT OR IGNORE INTO device_serials (device_id, serial) SELECT id, serial FROM devices WHERE serial != '';
 CREATE TABLE IF NOT EXISTS settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL
@@ -100,6 +108,24 @@ class Store:
 	def devices(self) -> list[Device]:
 		return [Device(**dict(r)) for r in self.db.execute("SELECT * FROM devices ORDER BY name, id")]
 
+	def device(self, device_id) -> Device | None:
+		row = self.db.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+		return Device(**dict(row)) if row else None
+
+	def serials(self, device_ids) -> list[str]:
+		"""Every serial the given devices have reported."""
+		ids = list(device_ids)
+		rows = self.db.execute(
+			f"SELECT serial FROM device_serials WHERE device_id IN ({','.join('?' * len(ids))})", ids
+		)
+		return [r["serial"] for r in rows]
+
+	def _remember_serial(self, device_id, serial):
+		if serial:
+			self.db.execute(
+				"INSERT OR IGNORE INTO device_serials (device_id, serial) VALUES (?, ?)", (device_id, serial)
+			)
+
 	def save_device(self, d: Device) -> int:
 		with self.db:
 			if d.id is None:
@@ -109,16 +135,20 @@ class Store:
 				)
 				d.id = cur.lastrowid
 			else:
+				# An empty serial means "not tested in the dialog": keep the one the last pull stored.
 				self.db.execute(
-					"UPDATE devices SET name = ?, ip = ?, port = ?, comm_key = ?, serial = ? WHERE id = ?",
+					"UPDATE devices SET name = ?, ip = ?, port = ?, comm_key = ?, "
+					"serial = coalesce(nullif(?, ''), serial) WHERE id = ?",
 					(d.name, d.ip, d.port, d.comm_key, d.serial, d.id),
 				)
+			self._remember_serial(d.id, d.serial)
 		return d.id
 
 	def delete_device(self, device_id):
 		# Punches are kept: they are attendance history, not device configuration.
 		with self.db:
 			self.db.execute("DELETE FROM devices WHERE id = ?", (device_id,))
+			self.db.execute("DELETE FROM device_serials WHERE device_id = ?", (device_id,))
 
 	def mark_pulled(self, device_id, serial, when: datetime):
 		with self.db:
@@ -126,6 +156,7 @@ class Store:
 				"UPDATE devices SET serial = ?, last_pull = ? WHERE id = ?",
 				(serial, when.strftime(TS_FORMAT), device_id),
 			)
+			self._remember_serial(device_id, serial)
 
 	# People
 
@@ -193,7 +224,8 @@ class Store:
 			"p.ts, p.punch, p.verify, coalesce(nullif(d.name, ''), p.serial) AS device "
 			"FROM punches p "
 			"LEFT JOIN people n ON n.user_id = p.user_id "
-			"LEFT JOIN (SELECT serial, min(name) AS name FROM devices WHERE serial != '' GROUP BY serial) d "
+			"LEFT JOIN (SELECT s.serial, min(d.name) AS name FROM device_serials s "
+			"JOIN devices d ON d.id = s.device_id GROUP BY s.serial) d "
 			"ON d.serial = p.serial "
 			"WHERE p.ts >= ? AND p.ts < ?"
 		)
