@@ -84,11 +84,29 @@ class PunchRow:
 class Store:
 	def __init__(self, path: Path | str):
 		self.db = sqlite3.connect(path)
-		self.db.row_factory = sqlite3.Row
-		self.db.executescript(SCHEMA)
+		try:
+			self.db.row_factory = sqlite3.Row
+			self.check()
+			self.db.executescript(SCHEMA)
+		except sqlite3.DatabaseError:
+			self.db.close()  # so the damaged file can be moved aside (Windows locks open files)
+			raise
+
+	def check(self):
+		result = self.db.execute("PRAGMA quick_check").fetchone()[0]
+		if result != "ok":
+			raise sqlite3.DatabaseError(f"database check failed: {result}")
 
 	def close(self):
 		self.db.close()
+
+	def backup(self, path: Path):
+		"""A consistent copy of the whole database, safe to take while the app runs."""
+		target = sqlite3.connect(path)
+		try:
+			self.db.backup(target)
+		finally:
+			target.close()
 
 	# Settings
 
@@ -119,6 +137,11 @@ class Store:
 			f"SELECT serial FROM device_serials WHERE device_id IN ({','.join('?' * len(ids))})", ids
 		)
 		return [r["serial"] for r in rows]
+
+	def serial_owner(self, serial) -> int | None:
+		"""The device a serial number belongs to, if any."""
+		row = self.db.execute("SELECT device_id FROM device_serials WHERE serial = ?", (serial,)).fetchone()
+		return row["device_id"] if row else None
 
 	def _remember_serial(self, device_id, serial):
 		if serial:

@@ -7,11 +7,15 @@ SHA-256 digest GitHub publishes for it, then run silently; it closes the app, up
 
 import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,31 +85,68 @@ def latest_release(timeout=15) -> Release:
 		raise UpdateError("GitHub sent an unexpected answer") from e
 
 
+# Where GitHub serves release files from, after the redirect from github.com.
+DOWNLOAD_HOSTS = ("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
+DOWNLOAD_DEADLINE = 15 * 60  # seconds for the whole download, not per read
+TEMP_PREFIX = "zk-pull-update-"
+
+
 def download_setup(release: Release, folder: Path | None = None, timeout=60) -> Path:
-	"""Download the installer and check it; returns its path."""
+	"""Download the installer and check it against GitHub's published SHA-256; returns its path."""
 	if not release.setup_url.startswith(f"https://github.com/{REPO}/releases/download/"):
 		raise UpdateError(f"unexpected download address: {release.setup_url!r}")
-	folder = Path(folder or tempfile.mkdtemp(prefix="zk-pull-update-"))
+	if not release.setup_sha256 or not release.setup_size:
+		raise UpdateError("the release has no published checksum")
+	folder = Path(folder or tempfile.mkdtemp(prefix=TEMP_PREFIX))
 	path = folder / f"ZK-Pull-Setup-{release.version}.exe"
-	sha = hashlib.sha256()
+	sha, size, started = hashlib.sha256(), 0, time.monotonic()
 	try:
 		with _get(release.setup_url, timeout) as response, open(path, "wb") as f:
+			final = urllib.parse.urlsplit(getattr(response, "url", release.setup_url) or release.setup_url)
+			if final.scheme != "https" or final.hostname not in DOWNLOAD_HOSTS:
+				raise UpdateError(f"redirected to an unexpected address: {final.hostname}")
 			while chunk := response.read(1 << 16):
+				size += len(chunk)
+				if size > release.setup_size:
+					raise UpdateError("the download is larger than published")
+				if time.monotonic() - started > DOWNLOAD_DEADLINE:
+					raise UpdateError("the download is too slow")
 				sha.update(chunk)
 				f.write(chunk)
+		if size != release.setup_size:
+			raise UpdateError("the download is incomplete")
+		if sha.hexdigest() != release.setup_sha256.lower():
+			raise UpdateError("the download does not match the published checksum")
 	except OSError as e:
+		path.unlink(missing_ok=True)
 		raise _network_error(e) from e
-	if release.setup_size and path.stat().st_size != release.setup_size:
-		raise UpdateError("the download is incomplete")
-	if release.setup_sha256 and sha.hexdigest() != release.setup_sha256.lower():
-		path.unlink()
-		raise UpdateError("the download does not match the published checksum")
+	except UpdateError:
+		path.unlink(missing_ok=True)
+		raise
 	return path
+
+
+def remove_old_downloads(keep: Path | None = None):
+	"""Delete installers left in %TEMP% by earlier updates (about 35 MB each)."""
+	for old in Path(tempfile.gettempdir()).glob(f"{TEMP_PREFIX}*"):
+		if keep is not None and old == keep:
+			continue
+		shutil.rmtree(old, ignore_errors=True)
 
 
 def installed() -> bool:
 	"""True for the installed app; False for the portable zip and when running from source."""
 	return bool(getattr(sys, "frozen", False)) and (Path(sys.executable).parent / "unins000.exe").exists()
+
+
+def per_user_install() -> bool:
+	"""The updater installs without admin rights, which only works for a per-user installation.
+
+	Installed "for all users" (under Program Files), the silent installer would need a UAC prompt
+	an HR account cannot approve; IT has to run the new installer instead.
+	"""
+	local = os.environ.get("LOCALAPPDATA")
+	return bool(local) and Path(sys.executable).resolve().is_relative_to(Path(local).resolve())
 
 
 def run_installer(path: Path):

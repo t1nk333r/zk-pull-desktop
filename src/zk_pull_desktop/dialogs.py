@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
 	QHBoxLayout,
 	QLabel,
 	QLineEdit,
-	QMessageBox,
 	QPushButton,
 	QSpinBox,
 	QVBoxLayout,
@@ -15,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import device as zk
+from . import messages
 from .i18n import LANGUAGES, tr
 from .store import Device, Store
 from .worker import busy, run_in_background
@@ -63,6 +63,7 @@ class DeviceForm(QFormLayout):
 		self.test_button.clicked.connect(self.test)
 		self.result = QLabel()
 		self.result.setWordWrap(True)
+		self.result.setTextFormat(Qt.TextFormat.PlainText)  # shows device data and errors
 		self.addRow(tr("device_name"), self.name)
 		self.addRow(tr("ip"), self.ip)
 		self.addRow(tr("port"), self.port)
@@ -116,7 +117,7 @@ class DeviceDialog(QDialog):
 	def __init__(self, parent, device: Device | None = None):
 		super().__init__(parent)
 		self.device_id = device.id if device else None
-		self.setWindowTitle(tr("devices"))
+		self.setWindowTitle(tr("edit_device") if device else tr("add_device"))
 		self.setMinimumWidth(420)
 		layout = QVBoxLayout(self)
 		self.form = DeviceForm(device)
@@ -132,7 +133,7 @@ class DeviceDialog(QDialog):
 
 	def _save(self):
 		if not self.form.is_valid():
-			QMessageBox.warning(self, tr("error"), tr("invalid_device"))
+			messages.warn(self, tr("error"), tr("invalid_device"))
 			return
 		self.accept()
 
@@ -152,12 +153,12 @@ class _DevicePage(QWizardPage):
 
 	def validatePage(self):
 		if busy():  # wait for Test, so the serial it reads is saved with the device
-			QMessageBox.information(self, tr("app_title"), tr("busy"))
+			messages.info(self, tr("app_title"), tr("busy"))
 			return False
 		if self.form.is_empty():
 			return True  # skipped
 		if not self.form.is_valid():
-			QMessageBox.warning(self, tr("error"), tr("invalid_device"))
+			messages.warn(self, tr("error"), tr("invalid_device"))
 			return False
 		self.store.save_device(self.form.device())
 		return True
@@ -177,6 +178,7 @@ class _NamesPage(QWizardPage):
 		layout.addWidget(self.button)
 		self.result = QLabel()
 		self.result.setWordWrap(True)
+		self.result.setTextFormat(Qt.TextFormat.PlainText)  # shows device data and errors
 		layout.addWidget(self.result)
 		layout.addStretch()
 
@@ -215,9 +217,8 @@ class FirstRunWizard(QWizard):
 		self.setOption(QWizard.WizardOption.NoBackButtonOnLastPage)
 
 	def done(self, result):
-		# Finish, Skip and the close button all end here. Closing while the device is being read
-		# would drop what it returns (the names being imported).
+		# Finish, Skip and the close button all end here. A device read still running is stopped,
+		# so a device that never answers cannot keep the wizard, and the app, from closing.
 		if busy():
-			QMessageBox.information(self, tr("app_title"), tr("busy"))
-			return
+			zk.cancel_all()
 		super().done(result)

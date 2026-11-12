@@ -1,14 +1,27 @@
 import logging
 import os
+import shutil
+import sqlite3
 import sys
+from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from PySide6.QtCore import QLibraryInfo, QLocale, QLockFile, QStandardPaths, Qt, QTimer, QTranslator, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtCore import (
+	QByteArray,
+	QLibraryInfo,
+	QLocale,
+	QLockFile,
+	QStandardPaths,
+	Qt,
+	QTimer,
+	QTranslator,
+	QUrl,
+)
+from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QTabWidget
 
-from . import __version__, i18n, updater, worker
+from . import __version__, i18n, messages, updater, worker
 from .attendance_tab import AttendanceTab
 from .dialogs import FirstRunWizard, LanguageDialog
 from .i18n import tr
@@ -41,12 +54,41 @@ class MainWindow(QMainWindow):
 			on_language_changed=on_language_changed,
 			on_check_updates=on_check_updates,
 		)
-		tabs = QTabWidget()
+		self.store = store
+		self.tabs = tabs = QTabWidget()
 		tabs.addTab(self.attendance, tr("tab_attendance"))
 		tabs.addTab(self.people, tr("tab_people"))
 		tabs.addTab(self.settings, tr("tab_settings"))
-		tabs.currentChanged.connect(lambda i: tabs.widget(i) is self.people and self.people.reload())
 		self.setCentralWidget(tabs)
+
+		geometry = store.get("window_geometry")
+		if geometry:
+			self.restoreGeometry(QByteArray.fromBase64(geometry.encode()))
+		tabs.setCurrentIndex(int(store.get("tab", "0") or 0))
+		tabs.currentChanged.connect(self._tab_changed)
+
+		for keys, action in (
+			("F5", self.attendance.pull),
+			("Ctrl+E", self.attendance.export),
+			("Ctrl+F", self._focus_search),
+		):
+			QShortcut(QKeySequence(keys), self, activated=action)
+
+	def _tab_changed(self, index):
+		self.store.set("tab", index)
+		if self.tabs.widget(index) is self.people:
+			self.people.reload()
+
+	def _focus_search(self):
+		page = self.tabs.currentWidget()
+		search = getattr(page, "search", None)
+		if search is not None:
+			search.setFocus()
+			search.selectAll()
+
+	def closeEvent(self, event):
+		self.store.set("window_geometry", self.saveGeometry().toBase64().data().decode())
+		super().closeEvent(event)
 
 
 class App:
@@ -82,6 +124,7 @@ class App:
 		self.window = MainWindow(self.store, self.data_dir, self.change_language, self.check_for_updates)
 		if old is not None:
 			self.window.setGeometry(old.geometry())
+			self.window.tabs.setCurrentIndex(old.tabs.currentIndex())
 		self.window.show()  # before closing the old one, or Qt quits when its last window closes
 		if old is not None:
 			old.close()
@@ -123,23 +166,26 @@ class App:
 		self.checking = False
 		log.warning("Update check failed: %s", message)
 		if not silent:
-			QMessageBox.warning(self.window, tr("error"), tr("update_failed", error=message))
+			messages.warn(self.window, tr("error"), tr("update_failed", error=message))
 
 	def _checked(self, release: updater.Release, silent):
 		self.checking = False
+		updater.remove_old_downloads()
 		log.info("Latest release: %s (this is %s)", release.version, __version__)
 		if not updater.is_newer(release.version):
 			if not silent:
-				QMessageBox.information(self.window, tr("app_title"), tr("update_none", version=__version__))
+				messages.info(self.window, tr("app_title"), tr("update_none", version=__version__))
 			return
 		values = {"version": release.version, "current": __version__}
 		if not updater.installed() or not release.setup_url:
 			# Portable copy or running from source: the installer would not update this folder.
-			answer = QMessageBox.question(self.window, tr("updates"), tr("update_portable", **values))
-			if answer == QMessageBox.StandardButton.Yes:
+			if messages.ask(self.window, tr("updates"), tr("update_portable", **values)):
 				QDesktopServices.openUrl(QUrl(release.page_url))
 			return
-		box = QMessageBox(self.window)
+		if not updater.per_user_install():
+			messages.info(self.window, tr("updates"), tr("update_ask_it", **values))
+			return
+		box = messages.box(self.window, QMessageBox.Icon.Information, tr("app_title"), "")
 		box.setWindowTitle(tr("updates"))
 		box.setText(tr("update_available", **values))
 		install = box.addButton(tr("install"), QMessageBox.ButtonRole.AcceptRole)
@@ -148,7 +194,7 @@ class App:
 		if box.clickedButton() is not install:
 			return
 		if worker.busy():
-			QMessageBox.information(self.window, tr("app_title"), tr("busy"))
+			messages.info(self.window, tr("app_title"), tr("busy"))
 			return
 		self.window.statusBar().showMessage(tr("update_downloading", version=release.version))
 		run_in_background(
@@ -161,11 +207,59 @@ class App:
 
 	def _downloaded(self, path):
 		if worker.busy():  # a pull started during the download; let it finish
-			QMessageBox.information(self.window, tr("app_title"), tr("busy"))
+			messages.info(self.window, tr("app_title"), tr("busy"))
 			return
 		log.info("Running installer %s", path)
 		updater.run_installer(path)
 		self.qt_app.quit()
+
+
+BACKUPS_KEPT = 7
+
+
+def daily_backup(store: Store, data_dir: Path):
+	"""One copy of the database per day in data_dir/backups, the last BACKUPS_KEPT days kept."""
+	folder = data_dir / "backups"
+	target = folder / f"zk_pull_{date.today():%Y-%m-%d}.db"
+	try:
+		folder.mkdir(exist_ok=True)
+		if not target.exists():
+			store.backup(target)
+		for old in sorted(folder.glob("zk_pull_*.db"))[:-BACKUPS_KEPT]:
+			old.unlink()
+	except (OSError, sqlite3.Error):
+		log.exception("Daily backup failed")
+
+
+def open_store(data_dir: Path) -> Store:
+	"""The database; a damaged one is moved aside and the latest daily backup offered instead."""
+	path = data_dir / "zk_pull.db"
+	try:
+		return Store(path)
+	except sqlite3.DatabaseError:
+		log.exception("Database %s is damaged", path)
+	damaged = path.with_name(f"zk_pull.damaged-{datetime.now():%Y%m%d-%H%M%S}.db")
+	path.rename(damaged)
+	backups = sorted((data_dir / "backups").glob("zk_pull_*.db"))
+	# Before the database opens the language is unknown, so both are shown.
+	if backups and messages.ask(
+		None,
+		"ZK Pull",
+		f"The database was damaged and has been kept as {damaged.name}.\n"
+		f"Restore the backup of {backups[-1].stem.removeprefix('zk_pull_')}?\n\n"
+		f"قاعدة البيانات تالفة، وحُفظت باسم {damaged.name}.\n"
+		f"هل تريد استعادة النسخة الاحتياطية بتاريخ {backups[-1].stem.removeprefix('zk_pull_')}؟",
+	):
+		shutil.copyfile(backups[-1], path)
+		log.info("Restored %s", backups[-1])
+	else:
+		messages.warn(
+			None,
+			"ZK Pull",
+			f"The database was damaged and has been kept as {damaged.name}. ZK Pull starts empty.\n\n"
+			f"قاعدة البيانات تالفة، وحُفظت باسم {damaged.name}. سيبدأ ZK Pull بقاعدة بيانات فارغة.",
+		)
+	return Store(path)
 
 
 def data_directory() -> Path:
@@ -183,7 +277,7 @@ def setup_logging(data_dir: Path):
 
 	def excepthook(kind, value, tb):
 		log.critical("Unhandled error", exc_info=(kind, value, tb))
-		QMessageBox.critical(None, tr("error"), f"{value}\n\n{data_dir / 'zk_pull.log'}")
+		messages.error(None, tr("error"), f"{value}\n\n{data_dir / 'zk_pull.log'}")
 
 	sys.excepthook = excepthook
 
@@ -199,10 +293,11 @@ def main():
 	lock = QLockFile(str(data_dir / "zk_pull.lock"))
 	if not lock.tryLock(100):
 		# HR, Admin and IT share the PC: two copies would share one database.
-		QMessageBox.information(None, "ZK Pull", "ZK Pull is already running.\nZK Pull يعمل بالفعل.")
+		messages.info(None, "ZK Pull", "ZK Pull is already running.\nZK Pull يعمل بالفعل.")
 		return 0
 	log.info("ZK Pull %s starting, data in %s", __version__, data_dir)
-	store = Store(data_dir / "zk_pull.db")
+	store = open_store(data_dir)
+	daily_backup(store, data_dir)
 	try:
 		code = App(qt_app, store, data_dir).run()
 	finally:

@@ -1,5 +1,7 @@
 # ZK Pull
 
+[العربية](README.ar.md) · [Release notes](CHANGELOG.md)
+
 A Windows desktop app that pulls attendance from ZKTeco devices over the office network and exports
 it to Excel or CSV. English and Arabic.
 
@@ -12,9 +14,17 @@ never changes users and never sets the clock.
 
 ## Features
 
-- **Pull** the attendance log from one device or all of them (TCP port 4370, read-only).
+- **Pull** from one device or all of them (TCP port 4370, read-only). Only the punches in the period
+  chosen are saved; the device has no way to send part of its log, so it is read in full and the rest
+  is left out. A device that is off does not stop the others; one message lists the ones that failed.
+  **Cancel** stops a pull. The time of the last pull is shown next to the device.
+- **Serial number check**: a device's serial number is remembered at its first pull. If a later pull
+  answers with another one (a replaced mainboard, or a different device at that IP address), the app
+  asks before saving anything, and it never mixes up two devices' punches.
 - **Pick a period**: today, yesterday, this week (from Sunday), this month, last month, or any dates.
-- **Export** the period to Excel (.xlsx) or CSV, switched with one click:
+- **Search** by employee ID, name or department; the export contains what the table shows.
+- **Export** the period to Excel (.xlsx) or CSV, switched with one click, in either layout (chosen
+  next to the Export button):
   - *Punch log*: one row per punch (employee ID, name, department, date, time, punch type, verified
     by, device).
   - *Daily summary*: one row per employee per day (first punch, last punch, hours, number of punches).
@@ -27,6 +37,9 @@ never changes users and never sets the clock.
 - **Updates itself**: checks GitHub for a new version at startup (can be turned off in Settings) and
   installs it after asking. The download is checked against the checksum GitHub publishes. This needs
   internet access; the portable zip only links to the download page.
+- **Keyboard**: F5 pulls, Ctrl+E exports, Ctrl+F searches. The window remembers its size and tab.
+- **Backups**: a copy of the database is kept for each of the last 7 days, and **Back up database…**
+  in Settings saves one anywhere. A damaged database is set aside and the latest backup offered.
 - English and Arabic (right to left). Numbers and dates always use Western digits (0-9).
 
 ## Install
@@ -38,7 +51,13 @@ needed. There is also a portable zip that runs without installing.
 The installer is not code-signed, so Windows SmartScreen shows *"Windows protected your PC"*. Click
 **More info**, then **Run anyway**. Updates installed from inside the app skip this.
 
-Version 0.1.0 has no updater: install 0.2.0 over it once by hand (names and history are kept).
+Version 0.1.0 has no updater: install a newer version over it once by hand (names and history are
+kept).
+
+If an update is interrupted (for example by antivirus) and the app no longer starts, run the latest
+`ZK-Pull-Setup-<version>.exe` by hand: it repairs the installation and keeps the data. When IT has
+installed the app "for all users", the app cannot update itself without admin rights and says so;
+IT then runs the new installer.
 
 The PC must be on the same network as the devices.
 
@@ -58,14 +77,29 @@ Everything is kept in `%LOCALAPPDATA%\ZK Pull`:
 - `zk_pull.db`: devices, names, pulled punches and settings (SQLite).
 - `zk_pull.log`: what was pulled and any errors. Send this file when reporting a problem.
 
-Uninstalling leaves this folder in place. Back it up to keep the names and history.
+- `backups\`: a copy of the database for each of the last 7 days.
+
+Uninstalling leaves this folder in place. **Settings → Back up database…** saves a copy anywhere; to
+restore one, close ZK Pull and copy it over `zk_pull.db`.
+
+## Security
+
+- Devices are only read, and are treated as untrusted: a device that stops answering, sends absurd
+  amounts of data or impossible dates cannot hang or crash the app; bad records are left out and
+  counted.
+- Names and errors from devices and files are always shown as plain text, never as HTML.
+- The comm key only proves the app to the device; anyone on the network can read a device's serial
+  number and send punches from its IP address. Keep the devices on their own network or VLAN, or give
+  them fixed ARP entries, if that matters.
+- Updates are checked against GitHub's published SHA-256, only from this repository's releases, and
+  never downgrade.
 
 ## Settings
 
 | Setting | Default | |
 |---|---|---|
 | Language | chosen on first launch | English or Arabic |
-| Export layout | Punch log | or Daily summary |
+| Export layout | Punch log | or Daily summary; chosen on the Attendance tab |
 | Export column headers | English | English headers are what payroll and ERP imports usually expect |
 | Default export folder | your home folder | then the last folder used |
 | Open file after export | on | the tick box next to **Export** |
@@ -103,9 +137,15 @@ uv run ruff check . && uv run ruff format --check .
 
 ## Release
 
-Set `__version__` in `src/zk_pull_desktop/__init__.py`, commit, then tag `v<version>` and push the
-tag. GitHub Actions (Windows) runs the tests, builds the app with PyInstaller, wraps it with Inno
-Setup and attaches the installer and portable zip to the release.
+1. Set `__version__` in `src/zk_pull_desktop/__init__.py`.
+2. Add a `## <version>` section to [CHANGELOG.md](CHANGELOG.md), in English and Arabic: it becomes
+   the release description.
+3. Commit to `main`, then tag `v<version>` and push the tag.
+
+GitHub Actions (Windows) runs the tests, builds the app with PyInstaller and wraps it with Inno
+Setup. The release job then checks that the tag is on `main` and that the changelog has the
+version, and publishes the installer and portable zip. It never replaces the files of an existing
+release, because installed copies trust what they download; fix a bad release with a new version.
 
 ## License
 

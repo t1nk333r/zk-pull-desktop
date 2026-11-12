@@ -1,5 +1,7 @@
 import csv
 import logging
+import zipfile
+from itertools import islice
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -10,7 +12,6 @@ from PySide6.QtWidgets import (
 	QHeaderView,
 	QInputDialog,
 	QLineEdit,
-	QMessageBox,
 	QPushButton,
 	QTableWidget,
 	QTableWidgetItem,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import device as zk
+from . import messages
 from .i18n import tr
 from .store import Person, Store
 from .worker import busy, run_in_background
@@ -46,16 +48,36 @@ def _is_header(first, rest) -> bool:
 	return any(word in cell for word in HEADER_WORDS) or any(r and r[0].isdigit() for r in rest)
 
 
+MAX_FILE = 20 * 1024 * 1024  # a names list is a few KB; anything this big is not one
+MAX_UNPACKED = 100 * 1024 * 1024  # XLSX is a zip: limit what it expands to
+MAX_ROWS = 100_000
+
+
+class NamesFileError(ValueError):
+	pass
+
+
+def _check_size(path: Path):
+	if path.stat().st_size > MAX_FILE:
+		raise NamesFileError(tr("file_too_large"))
+	if path.suffix.lower() == ".xlsx":
+		with zipfile.ZipFile(path) as z:
+			if sum(i.file_size for i in z.infolist()) > MAX_UNPACKED:
+				raise NamesFileError(tr("file_too_large"))
+
+
 def read_names_file(path: Path) -> dict[str, str]:
 	"""Employee ID -> name from the first two columns of a CSV or XLSX file, skipping a header row."""
+	_check_size(path)
 	if path.suffix.lower() == ".xlsx":
 		wb = load_workbook(path, read_only=True, data_only=True)
 		rows = [
-			[("" if v is None else str(v)) for v in row[:2]] for row in wb.active.iter_rows(values_only=True)
+			[("" if v is None else str(v)) for v in row[:2]]
+			for row in islice(wb.active.iter_rows(values_only=True, max_col=2), MAX_ROWS)
 		]
 		wb.close()
 	else:
-		rows = [row[:2] for row in csv.reader(_csv_text(path).splitlines())]
+		rows = [row[:2] for row in islice(csv.reader(_csv_text(path).splitlines()), MAX_ROWS)]
 	rows = [[cell.strip() for cell in row] for row in rows if any(cell.strip() for cell in row)]
 	if rows and _is_header(rows[0], rows[1:]):
 		rows = rows[1:]
@@ -158,7 +180,7 @@ class PeopleTab(QWidget):
 		if not ok or not user_id:
 			return
 		if any(p.user_id == user_id for p in self.store.people()):
-			QMessageBox.information(self, tr("app_title"), tr("duplicate_id"))
+			messages.info(self, tr("app_title"), tr("duplicate_id"))
 			return
 		self.store.save_person(Person(user_id, ""))
 		self.reload()
@@ -177,8 +199,7 @@ class PeopleTab(QWidget):
 			return
 		user_id = self.table.item(row, self.ID).text()
 		name = self.table.item(row, self.NAME).text() or user_id
-		answer = QMessageBox.question(self, tr("delete"), tr("confirm_delete_person", name=name))
-		if answer == QMessageBox.StandardButton.Yes:
+		if messages.ask(self, tr("delete"), tr("confirm_delete_person", name=name)):
 			self.store.delete_person(user_id)
 			self.reload()
 			self.on_change()
@@ -197,7 +218,7 @@ class PeopleTab(QWidget):
 			return
 		devices = self.store.devices()
 		if not devices:
-			QMessageBox.information(self, tr("app_title"), tr("no_devices"))
+			messages.info(self, tr("app_title"), tr("no_devices"))
 			return
 		d = devices[0]
 		if len(devices) > 1:
@@ -219,19 +240,28 @@ class PeopleTab(QWidget):
 
 	def _device_failed(self, message):
 		self.buttons["import_device"].setEnabled(True)
-		QMessageBox.warning(self, tr("error"), tr("import_failed", error=message))
+		messages.warn(self, tr("error"), tr("import_failed", error=message))
 
 	def import_file(self):
-		QMessageBox.information(self, tr("import_file"), tr("import_file_hint"))
+		if not self.store.get("import_hint_shown"):  # once is enough
+			messages.info(self, tr("import_file"), tr("import_file_hint"))
+			self.store.set("import_hint_shown", "1")
 		path, _ = QFileDialog.getOpenFileName(
 			self, tr("import_file"), str(Path.home()), "Excel / CSV (*.xlsx *.csv)"
 		)
 		if not path:
 			return
-		try:
-			names = read_names_file(Path(path))
-		except Exception as e:  # a damaged or unexpected file; show why instead of crashing
-			log.exception("Importing names from %s failed", path)
-			QMessageBox.warning(self, tr("error"), tr("import_failed", error=e))
-			return
-		self._changed(self.store.import_names(names, overwrite=True))
+		self.buttons["import_file"].setEnabled(False)
+		# Off the UI thread: a large file must not freeze the window.
+		run_in_background(
+			read_names_file, Path(path), on_done=self._file_names, on_failed=self._file_failed, device=False
+		)
+
+	def _file_names(self, names):
+		count = self.store.import_names(names, overwrite=True)
+		self.buttons["import_file"].setEnabled(True)
+		self._changed(count)
+
+	def _file_failed(self, message):
+		self.buttons["import_file"].setEnabled(True)
+		messages.warn(self, tr("error"), tr("import_failed", error=message))

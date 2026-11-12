@@ -74,7 +74,13 @@ def running() -> bool:
 
 def error_message(e: Exception) -> str:
 	"""A message HR can act on, instead of a Python exception."""
+	from .device import Cancelled, DeviceError  # here: device imports nothing from the UI side
+
 	text = str(e)
+	if isinstance(e, Cancelled):
+		return tr("cancelled")
+	if isinstance(e, DeviceError):
+		return tr("err_device", detail=text)
 	if "Unauthenticated" in text:
 		return tr("err_comm_key")
 	if (

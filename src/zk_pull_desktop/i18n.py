@@ -19,10 +19,6 @@ TEXTS = {
 	"export": ("Export…", "تصدير…"),
 	"format": ("Format", "الصيغة"),
 	"pulling": ("Pulling from {device}…", "جارٍ السحب من {device}…"),
-	"pull_done": (
-		"{device}: {total} punches on the device, {new} new.",
-		"{device}: عدد البصمات على الجهاز {total}، منها {new} جديدة.",
-	),
 	"pull_failed": ("Could not pull from {device}: {error}", "تعذّر السحب من {device}: {error}"),
 	"no_devices": (
 		"No devices yet. Add one in Settings.",
@@ -42,6 +38,51 @@ TEXTS = {
 		"Please wait: the device is still being read.",
 		"يرجى الانتظار: لا تزال قراءة الجهاز جارية.",
 	),
+	"serial_changed": (
+		"{device} now reports serial number {new} instead of {old}. That happens when its mainboard is "
+		"replaced, but it can also mean a different device is at this IP address. Save its punches "
+		"under {device}?",
+		"الجهاز {device} يُظهر الآن الرقم التسلسلي {new} بدلًا من {old}. يحدث ذلك عند استبدال اللوحة الأم، "
+		"لكنه قد يعني أيضًا وجود جهاز آخر على عنوان IP هذا. هل تريد حفظ بصماته باسم {device}؟",
+	),
+	"serial_refused": (
+		"not saved: serial number {serial} was not accepted",
+		"لم تُحفظ: لم يُقبل الرقم التسلسلي {serial}",
+	),
+	"serial_taken": (
+		"not saved: serial number {serial} belongs to {other}. Check the IP addresses in Settings.",
+		"لم تُحفظ: الرقم التسلسلي {serial} يخص الجهاز {other}. تحقّق من عناوين IP في الإعدادات.",
+	),
+	"search_punches": (
+		"Search ID, name or department…  (Ctrl+F)",
+		"بحث برقم الموظف أو الاسم أو القسم…  (Ctrl+F)",
+	),
+	"last_pull_label": ("Last pull: {when}", "آخر سحب: {when}"),
+	"never_pulled": ("Not pulled yet", "لم يُسحب بعد"),
+	"pull_done_one": (
+		"{device}: {kept} punches from {start} to {end}, {new} of them new.",
+		"{device}: عدد البصمات من {start} إلى {end}: {kept}، منها {new} جديدة.",
+	),
+	"pull_summary": (
+		"Pulled {ok} of {total} devices: {kept} punches from {start} to {end}, {new} of them new.",
+		"تم السحب من {ok} من أصل {total} أجهزة: عدد البصمات من {start} إلى {end}: {kept}، منها {new} جديدة.",
+	),
+	"pull_failures": ("Pull results:\n{devices}", "نتائج السحب:\n{devices}"),
+	"empty_no_devices": (
+		"No devices yet: add one in Settings.",
+		"لا توجد أجهزة بعد: أضف جهازًا من الإعدادات.",
+	),
+	"empty_no_punches": (
+		'No punches in this period. Press "Pull from device" to read the device.',
+		'لا توجد بصمات في هذه الفترة. اضغط "سحب من الجهاز" لقراءة الجهاز.',
+	),
+	"from_after_to": ("The From date is after the To date.", "تاريخ البداية بعد تاريخ النهاية."),
+	"export_in_use": (
+		"Could not save {path}: the file is open in another program, probably Excel. Close it and try again.",
+		"تعذّر حفظ {path}: الملف مفتوح في برنامج آخر، غالبًا Excel. أغلقه ثم حاول مرة أخرى.",
+	),
+	"layout_log_short": ("Punch log", "سجل البصمات"),
+	"layout_daily_short": ("Daily summary", "ملخص يومي"),
 	# Columns (also used as export headers)
 	"col_user_id": ("Employee ID", "رقم الموظف"),
 	"col_name": ("Name", "الاسم"),
@@ -81,6 +122,8 @@ TEXTS = {
 		"The file needs two columns: employee ID, then name (a header row is fine).",
 		"يجب أن يحتوي الملف على عمودين: رقم الموظف ثم الاسم (يمكن أن يكون أول صف عناوين).",
 	),
+	"file_too_large": ("The file is too large for a names list.", "الملف أكبر من أن يكون قائمة أسماء."),
+	"confirm_overwrite": ("{path} already exists. Replace it?", "الملف {path} موجود. هل تريد استبداله؟"),
 	"new_user_id": ("Employee ID (as on the device):", "رقم الموظف (كما في الجهاز):"),
 	"confirm_delete_person": ("Delete {name}?", "حذف {name}؟"),
 	"duplicate_id": ("This employee ID already exists.", "رقم الموظف هذا موجود مسبقًا."),
@@ -93,6 +136,8 @@ TEXTS = {
 	"serial": ("Serial number", "الرقم التسلسلي"),
 	"last_pull": ("Last pull", "آخر سحب"),
 	"edit": ("Edit", "تعديل"),
+	"add_device": ("Add device", "إضافة جهاز"),
+	"edit_device": ("Edit device", "تعديل الجهاز"),
 	"test": ("Test connection", "اختبار الاتصال"),
 	"test_ok": (
 		"Connected. Serial {serial}, {punches} punches, {users} users.",
@@ -113,6 +158,20 @@ TEXTS = {
 	"browse": ("Browse…", "استعراض…"),
 	"data_folder": ("Data folder", "مجلد البيانات"),
 	"invalid_device": ("Name and IP address are required.", "الاسم وعنوان IP مطلوبان."),
+	"open_data_folder": ("Open data folder", "فتح مجلد البيانات"),
+	"open_log": ("Open log", "فتح السجل"),
+	"backup": ("Back up database…", "نسخ احتياطي لقاعدة البيانات…"),
+	"backup_done": (
+		"Backup saved to {path}. To restore it, close ZK Pull and copy it over zk_pull.db in the data folder.",
+		"تم حفظ النسخة الاحتياطية في {path}. لاستعادتها، أغلق ZK Pull وانسخها مكان zk_pull.db في مجلد البيانات.",
+	),
+	"backup_failed": ("Could not back up: {error}", "تعذّر النسخ الاحتياطي: {error}"),
+	"about": ("About", "حول البرنامج"),
+	"about_text": (
+		"Pulls attendance from ZKTeco devices and exports it to Excel or CSV. It only reads from devices.",
+		"يسحب سجلات الحضور من أجهزة ZKTeco ويصدّرها إلى Excel أو CSV. يقرأ من الأجهزة فقط.",
+	),
+	"about_icon": ("App icon by", "أيقونة البرنامج من"),
 	# Updates
 	"updates": ("Updates", "التحديثات"),
 	"check_updates_startup": ("Check for updates at startup", "التحقق من التحديثات عند التشغيل"),
@@ -126,6 +185,12 @@ TEXTS = {
 	"update_portable": (
 		"Version {version} is available (this is {current}). Open the download page?",
 		"الإصدار {version} متاح (الإصدار الحالي {current}). هل تريد فتح صفحة التنزيل؟",
+	),
+	"update_ask_it": (
+		"Version {version} is available (this is {current}). ZK Pull is installed for all users, so "
+		"updating needs administrator rights: ask IT to run the new installer.",
+		"الإصدار {version} متاح (الإصدار الحالي {current}). ZK Pull مثبّت لجميع المستخدمين، لذا يحتاج "
+		"التحديث إلى صلاحيات المسؤول: اطلب من قسم تقنية المعلومات تشغيل المثبّت الجديد.",
 	),
 	"update_none": ("ZK Pull is up to date (version {version}).", "ZK Pull محدّث (الإصدار {version})."),
 	"update_failed": ("Could not update: {error}", "تعذّر التحديث: {error}"),
@@ -150,13 +215,19 @@ TEXTS = {
 	"skip": ("Skip", "تخطي"),
 	"next": ("Next", "التالي"),
 	"finish": ("Finish", "إنهاء"),
-	"cancel": ("Cancel", "إلغاء"),
 	"save": ("Save", "حفظ"),
 	"error": ("Error", "خطأ"),
 	"err_unreachable": (
 		"The device did not answer. Check the IP address and port, that the device is on, and that this "
 		"PC is on the same network.",
 		"لم يستجب الجهاز. تحقّق من عنوان IP والمنفذ، ومن أن الجهاز يعمل، وأن هذا الحاسوب على الشبكة نفسها.",
+	),
+	"err_device": ("The device sent unusable data ({detail}).", "أرسل الجهاز بيانات غير صالحة ({detail})."),
+	"cancelled": ("Cancelled.", "تم الإلغاء."),
+	"cancel": ("Cancel", "إلغاء"),
+	"skipped_records": (
+		"{count} records on {device} have an impossible date and were left out.",
+		"عدد السجلات ذات التاريخ غير الصحيح في {device}: {count}، ولم تُحفظ.",
 	),
 	"err_comm_key": (
 		"The device refused the connection: the comm key is wrong.",

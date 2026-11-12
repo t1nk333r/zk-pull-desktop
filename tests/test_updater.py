@@ -61,3 +61,24 @@ def test_download_only_from_this_repository(tmp_path, serve):
 	data["assets"][1]["browser_download_url"] = "https://example.com/ZK-Pull-Setup-0.2.0.exe"
 	with pytest.raises(updater.UpdateError, match="unexpected"):
 		updater.download_setup(updater.release_from_api(data), tmp_path)
+
+
+def test_download_requires_a_published_checksum(tmp_path, serve):
+	with pytest.raises(updater.UpdateError, match="checksum"):
+		updater.download_setup(updater.release_from_api(api(digest=None)), tmp_path)
+
+
+def test_download_stops_when_larger_than_published(tmp_path, monkeypatch):
+	monkeypatch.setattr(updater, "_get", lambda url, timeout: io.BytesIO(PAYLOAD * 10_000))
+	with pytest.raises(updater.UpdateError, match="larger"):
+		updater.download_setup(updater.release_from_api(api()), tmp_path)
+	assert not list(tmp_path.iterdir())  # nothing half-downloaded is left behind
+
+
+def test_download_refuses_a_redirect_elsewhere(tmp_path, monkeypatch):
+	class Redirected(io.BytesIO):
+		url = "http://evil.example/ZK-Pull-Setup-0.2.0.exe"
+
+	monkeypatch.setattr(updater, "_get", lambda url, timeout: Redirected(PAYLOAD))
+	with pytest.raises(updater.UpdateError, match="unexpected"):
+		updater.download_setup(updater.release_from_api(api()), tmp_path)
