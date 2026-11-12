@@ -4,6 +4,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from PySide6.QtCore import QLocale, QStandardPaths, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QTabWidget
 
 from . import __version__, i18n
@@ -18,6 +19,8 @@ log = logging.getLogger(__name__)
 
 # Arabic (UAE) is Arabic with Western digits (0-9) and the usual Gregorian month names.
 LOCALES = {"en": "en_US", "ar": "ar_AE"}
+
+ICON = Path(__file__).parent / "assets" / "icon.png"
 
 
 class MainWindow(QMainWindow):
@@ -108,6 +111,7 @@ def main():
 	qt_app.setApplicationName("ZK Pull")
 	qt_app.setOrganizationName("")
 	qt_app.setApplicationVersion(__version__)
+	qt_app.setWindowIcon(QIcon(str(ICON)))  # every window and dialog, and the taskbar
 	data_dir = data_directory()
 	setup_logging(data_dir)
 	log.info("ZK Pull %s starting, data in %s", __version__, data_dir)

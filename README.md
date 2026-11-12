@@ -92,4 +92,5 @@ Setup and attaches the installer and portable zip to the release.
 
 ## License
 
-MIT
+MIT. The app icon is "Fingerprint" by [Icons8](https://icons8.com), used under their free licence,
+which requires this link.
