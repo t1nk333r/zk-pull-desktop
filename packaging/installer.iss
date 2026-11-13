@@ -10,6 +10,7 @@ AppId={{6B0E4F2A-6C1D-4E8B-9C57-2F4A9D3E1B70}
 AppName=ZK Pull
 AppVersion={#AppVersion}
 AppPublisher=NSS
+AppCopyright=Copyright (c) 2026 t1nk333r
 DefaultDirName={autopf}\ZK Pull
 DefaultGroupName=ZK Pull
 DisableProgramGroupPage=yes

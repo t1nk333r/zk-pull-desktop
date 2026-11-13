@@ -149,5 +149,5 @@ release, because installed copies trust what they download; fix a bad release wi
 
 ## License
 
-MIT. The app icon is "Fingerprint" by [Icons8](https://icons8.com), used under their free licence,
+Copyright © 2026 t1nk333r, under the MIT License. The app icon is "Fingerprint" by [Icons8](https://icons8.com), used under their free licence,
 which requires this link.

@@ -220,7 +220,7 @@ class SettingsTab(QWidget):
 		box.setText(
 			f"<b>ZK Pull {__version__}</b><br>{tr('about_text')}<br><br>"
 			f'<a href="https://github.com/t1nk333r/zk-pull-desktop">github.com/t1nk333r/zk-pull-desktop</a>'
-			f"<br>MIT License<br><br>{tr('about_icon')} "
+			f"<br>Copyright © 2026 t1nk333r · MIT License<br><br>{tr('about_icon')} "
 			f'<a href="https://icons8.com">Icons8</a>'
 		)
 		box.exec()
