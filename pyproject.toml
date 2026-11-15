@@ -3,8 +3,8 @@ name = "zk-pull-desktop"
 dynamic = ["version"]
 description = "Pull attendance from ZKTeco devices over the LAN and export it to Excel or CSV"
 readme = "README.md"
-license = "MIT"
-authors = [{ name = "t1nk333r" }]
+license = "CC-BY-NC-ND-4.0"
+authors = [{ name = "Abdulrahman Aloqayli" }]
 requires-python = ">=3.12,<3.14"
 dependencies = [
 	"pyside6>=6.8",

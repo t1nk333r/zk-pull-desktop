@@ -133,7 +133,7 @@ uv run ruff check . && uv run ruff format --check .
 
 ## الترخيص
 
-حقوق النشر © 2026 t1nk333r، بترخيص MIT. أيقونة البرنامج "Fingerprint" من [Icons8](https://icons8.com)، وتُستخدم وفق ترخيصهم المجاني الذي
+حقوق النشر © 2026 Abdulrahman Aloqayli، بترخيص Creative Commons BY-NC-ND 4.0. أيقونة البرنامج "Fingerprint" من [Icons8](https://icons8.com)، وتُستخدم وفق ترخيصهم المجاني الذي
 يشترط وضع هذا الرابط.
 
 </div>
