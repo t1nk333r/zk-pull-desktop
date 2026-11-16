@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,12 +66,16 @@ def release_from_api(data: dict) -> Release:
 
 
 class UpdateError(Exception):
-	"""Raised with a message for the user; network errors are not about a device."""
+	"""The update failed. reason names the message the UI shows (upd_<reason>), values fill it in."""
+
+	def __init__(self, reason, detail="", **values):
+		super().__init__(f"{reason}: {detail}" if detail else reason)
+		self.reason = reason
+		self.values = values
 
 
 def _network_error(e):
-	reason = getattr(e, "reason", None) or getattr(e, "strerror", None) or e
-	return UpdateError(f"no connection to GitHub ({reason})")
+	return UpdateError("offline", str(getattr(e, "reason", None) or getattr(e, "strerror", None) or e))
 
 
 def latest_release(timeout=15) -> Release:
@@ -78,11 +83,11 @@ def latest_release(timeout=15) -> Release:
 		with _get(API_URL, timeout) as response:
 			return release_from_api(json.load(response))
 	except urllib.error.HTTPError as e:
-		raise UpdateError(f"GitHub answered HTTP {e.code}") from e
+		raise UpdateError("http", code=e.code) from e
 	except OSError as e:
 		raise _network_error(e) from e
 	except (ValueError, KeyError) as e:
-		raise UpdateError("GitHub sent an unexpected answer") from e
+		raise UpdateError("bad_answer") from e
 
 
 # Where GitHub serves release files from, after the redirect from github.com.
@@ -94,9 +99,9 @@ TEMP_PREFIX = "zk-pull-update-"
 def download_setup(release: Release, folder: Path | None = None, timeout=60) -> Path:
 	"""Download the installer and check it against GitHub's published SHA-256; returns its path."""
 	if not release.setup_url.startswith(f"https://github.com/{REPO}/releases/download/"):
-		raise UpdateError(f"unexpected download address: {release.setup_url!r}")
+		raise UpdateError("bad_address", release.setup_url)
 	if not release.setup_sha256 or not release.setup_size:
-		raise UpdateError("the release has no published checksum")
+		raise UpdateError("no_checksum")
 	folder = Path(folder or tempfile.mkdtemp(prefix=TEMP_PREFIX))
 	path = folder / f"ZK-Pull-Setup-{release.version}.exe"
 	sha, size, started = hashlib.sha256(), 0, time.monotonic()
@@ -104,19 +109,19 @@ def download_setup(release: Release, folder: Path | None = None, timeout=60) -> 
 		with _get(release.setup_url, timeout) as response, open(path, "wb") as f:
 			final = urllib.parse.urlsplit(getattr(response, "url", release.setup_url) or release.setup_url)
 			if final.scheme != "https" or final.hostname not in DOWNLOAD_HOSTS:
-				raise UpdateError(f"redirected to an unexpected address: {final.hostname}")
+				raise UpdateError("redirect", str(final.hostname))
 			while chunk := response.read(1 << 16):
 				size += len(chunk)
 				if size > release.setup_size:
-					raise UpdateError("the download is larger than published")
+					raise UpdateError("too_large")
 				if time.monotonic() - started > DOWNLOAD_DEADLINE:
-					raise UpdateError("the download is too slow")
+					raise UpdateError("too_slow")
 				sha.update(chunk)
 				f.write(chunk)
 		if size != release.setup_size:
-			raise UpdateError("the download is incomplete")
+			raise UpdateError("incomplete")
 		if sha.hexdigest() != release.setup_sha256.lower():
-			raise UpdateError("the download does not match the published checksum")
+			raise UpdateError("checksum")
 	except OSError as e:
 		path.unlink(missing_ok=True)
 		raise _network_error(e) from e
@@ -139,21 +144,56 @@ def installed() -> bool:
 	return bool(getattr(sys, "frozen", False)) and (Path(sys.executable).parent / "unins000.exe").exists()
 
 
+# Inno Setup records a "just for me" install under HKCU with this key (AppId in installer.iss + "_is1").
+UNINSTALL_KEY = (
+	r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{6B0E4F2A-6C1D-4E8B-9C57-2F4A9D3E1B70}_is1"
+)
+
+
+def _per_user_location() -> Path | None:
+	try:
+		import winreg
+	except ImportError:  # not Windows
+		return None
+	try:
+		with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
+			return Path(winreg.QueryValueEx(key, "InstallLocation")[0])
+	except OSError:
+		return None
+
+
 def per_user_install() -> bool:
 	"""The updater installs without admin rights, which only works for a per-user installation.
 
-	Installed "for all users" (under Program Files), the silent installer would need a UAC prompt
-	an HR account cannot approve; IT has to run the new installer instead.
+	Installed "for all users", the silent installer would need a UAC prompt an HR account cannot
+	approve; IT has to run the new installer instead. A per-user install can be in any folder, so
+	the installer's own record says which kind this is; under %LOCALAPPDATA% is the fallback.
 	"""
+	exe_dir = Path(sys.executable).resolve().parent
+	location = _per_user_location()
+	if location is not None:
+		with suppress(OSError):
+			return location.resolve() == exe_dir
 	local = os.environ.get("LOCALAPPDATA")
-	return bool(local) and Path(sys.executable).resolve().is_relative_to(Path(local).resolve())
+	return bool(local) and exe_dir.is_relative_to(Path(local).resolve())
 
 
 def run_installer(path: Path):
 	"""Start the installer and return at once; the caller must quit so the files can be replaced."""
 	flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+	# /CURRENTUSER: never the all-users mode, whose UAC prompt HR cannot approve. /ZKUPDATE=1 tells
+	# the installer to start the new version when it is done (installer.iss).
 	subprocess.Popen(
-		[str(path), "/SP-", "/SILENT", "/NOCANCEL", "/CLOSEAPPLICATIONS", "/NORESTART"],
+		[
+			str(path),
+			"/SP-",
+			"/SILENT",
+			"/NOCANCEL",
+			"/CLOSEAPPLICATIONS",
+			"/NORESTART",
+			"/CURRENTUSER",
+			"/ZKUPDATE=1",
+		],
 		creationflags=flags,
 		close_fds=True,
 	)

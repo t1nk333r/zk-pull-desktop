@@ -39,7 +39,7 @@ never changes users and never sets the clock.
   internet access; the portable zip only links to the download page.
 - **Keyboard**: F5 pulls, Ctrl+E exports, Ctrl+F searches. The window remembers its size and tab.
 - **Backups**: a copy of the database is kept for each of the last 7 days, and **Back up database…**
-  in Settings saves one anywhere. A damaged database is set aside and the latest backup offered.
+  in Settings saves one anywhere. A damaged database is set aside and the newest good backup offered.
 - English and Arabic (right to left). Numbers and dates always use Western digits (0-9).
 
 ## Install
@@ -93,6 +93,9 @@ restore one, close ZK Pull and copy it over `zk_pull.db`.
   them fixed ARP entries, if that matters.
 - Updates are checked against GitHub's published SHA-256, only from this repository's releases, and
   never downgrade.
+- The device client is ZK Pull's own code and sends only read commands (connect, read the serial
+  number and record counts, read and free a buffer, disconnect); a test fails if any other command
+  is sent.
 
 ## Settings
 
@@ -126,7 +129,7 @@ uv run ruff check . && uv run ruff format --check .
 
 | Module | |
 |---|---|
-| `device.py` | Reads punches and users from a device (pyzk). Read-only. |
+| `device.py` | ZK Pull's own client for the ZKTeco protocol: reads punches and users. Read-only. |
 | `store.py` | SQLite: devices, people, punches, settings. |
 | `export.py` | CSV / XLSX writers, punch log and daily summary. |
 | `i18n.py` | English and Arabic texts. |
@@ -138,8 +141,9 @@ uv run ruff check . && uv run ruff format --check .
 ## Release
 
 1. Set `__version__` in `src/zk_pull_desktop/__init__.py`.
-2. Add a `## <version>` section to [CHANGELOG.md](CHANGELOG.md), in English and Arabic: it becomes
-   the release description.
+2. Add a `## <version> (<date>)` section to [CHANGELOG.md](CHANGELOG.md), for example
+   `## 0.4.0 (2026-11-16)`, in English and Arabic: it becomes the release description. The release
+   job looks for the version followed by a space.
 3. Commit to `main`, then tag `v<version>` and push the tag.
 
 GitHub Actions (Windows) runs the tests, builds the app with PyInstaller and wraps it with Inno
@@ -150,4 +154,5 @@ release, because installed copies trust what they download; fix a bad release wi
 ## License
 
 Copyright © 2026 Abdulrahman Aloqayli, under the Creative Commons BY-NC-ND 4.0 licence. The app icon is "Fingerprint" by [Icons8](https://icons8.com), used under their free licence,
-which requires this link.
+which requires this link. The installer also contains Qt, PySide6, Python, openpyxl and defusedxml
+under their own licences: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

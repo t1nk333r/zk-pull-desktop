@@ -1,3 +1,4 @@
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from . import __version__, messages
 from .dialogs import DeviceDialog
-from .i18n import LANGUAGES, language, tr
+from .i18n import LANGUAGES, is_rtl, isolate, language, tr
 from .store import Store
 from .worker import busy
 
@@ -112,6 +113,9 @@ class SettingsTab(QWidget):
 		about = QPushButton(tr("about"))
 		about.clicked.connect(self.about)
 		updates_row.addWidget(about)
+		notices = QPushButton(tr("third_party"))
+		notices.clicked.connect(self.third_party)
+		updates_row.addWidget(notices)
 		form.addRow(tr("updates"), updates_row)
 
 		layout = QVBoxLayout(self)
@@ -128,7 +132,9 @@ class SettingsTab(QWidget):
 		self._devices = self.store.devices()
 		self.devices.setRowCount(len(self._devices))
 		for row, d in enumerate(self._devices):
-			for column, value in enumerate((d.name, d.ip, str(d.port), d.serial, d.last_pull)):
+			# Isolated in Arabic, or the date and time of the last pull swap places.
+			last_pull = isolate(d.last_pull) if is_rtl() else d.last_pull
+			for column, value in enumerate((d.name, d.ip, str(d.port), d.serial, last_pull)):
 				self.devices.setItem(row, column, QTableWidgetItem(value))
 
 	def _selected(self):
@@ -153,9 +159,15 @@ class SettingsTab(QWidget):
 		)
 		return False
 
+	def _refuse_while_busy(self) -> bool:
+		"""A device changed or removed mid-pull would get the pull's results under a stale entry."""
+		if busy():
+			messages.info(self, tr("app_title"), tr("busy"))
+		return busy()
+
 	def edit_device(self):
 		d = self._selected()
-		if d is None:
+		if d is None or self._refuse_while_busy():
 			return
 		d = self.store.device(d.id)  # fresh: a pull may have set the serial since the list was shown
 		dialog = DeviceDialog(self, d)
@@ -166,7 +178,7 @@ class SettingsTab(QWidget):
 
 	def delete_device(self):
 		d = self._selected()
-		if d is None:
+		if d is None or self._refuse_while_busy():
 			return
 		if messages.ask(self, tr("delete"), tr("confirm_delete_device", name=d.name)):
 			self.store.delete_device(d.id)
@@ -185,6 +197,7 @@ class SettingsTab(QWidget):
 	def showEvent(self, event):
 		super().showEvent(event)
 		self.reload_devices()  # serial and last pull change with every pull
+		self.folder.setText(self.store.get("export_folder") or str(Path.home()))  # each export updates it
 
 	def _language_changed(self):
 		code = self.language.currentData()
@@ -224,3 +237,10 @@ class SettingsTab(QWidget):
 			f'<a href="https://icons8.com">Icons8</a>'
 		)
 		box.exec()
+
+	def third_party(self):
+		"""The licences of the components shipped with the app (Qt, Python, openpyxl, ...)."""
+		folder = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parents[2]
+		notices = folder / "THIRD_PARTY_NOTICES.md"
+		if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(notices))):
+			QMessageBox.aboutQt(self)

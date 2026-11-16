@@ -139,7 +139,9 @@ def write(path: Path, punches: list[PunchRow], fmt="xlsx", layout="log", lang="e
 def _write_xlsx(path, headers, rows, layout, lang):
 	wb = Workbook()
 	ws = wb.active
-	ws.title = tr("layout_daily" if layout == "daily" else "tab_attendance", lang)[:31]
+	ws.title = tr(
+		"layout_daily_short" if layout == "daily" else "tab_attendance", lang
+	)  # 31 characters at most
 	ws.sheet_view.rightToLeft = lang == "ar"
 	ws.append(headers)
 	for cell in ws[1]:
@@ -147,8 +149,9 @@ def _write_xlsx(path, headers, rows, layout, lang):
 	for row in rows:
 		ws.append([_clean(v) for v in row])
 		for cell in ws[ws.max_row]:
-			# openpyxl turns text starting with "=" into a formula; keep names as text, unchanged.
-			if cell.data_type == "f":
+			# openpyxl turns text starting with "=" into a formula, and "#N/A" or "#REF!" into an error
+			# cell; keep names as text, unchanged.
+			if cell.data_type in ("f", "e"):
 				cell.data_type = "s"
 
 	formats = {date: "yyyy-mm-dd", time: "hh:mm:ss"}

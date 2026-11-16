@@ -17,6 +17,9 @@ DisableProgramGroupPage=yes
 ; Installs for the current user without admin rights; IT can still choose "all users".
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+; Choose the mode afresh each time instead of reusing a previous install's: a silent update from an
+; HR account must not pick "all users" because IT once installed it that way.
+UsePreviousPrivileges=no
 OutputDir=..\dist
 OutputBaseFilename=ZK-Pull-Setup-{#AppVersion}
 Compression=lzma2
@@ -45,8 +48,16 @@ Name: "{autodesktop}\ZK Pull"; Filename: "{app}\ZK Pull.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\ZK Pull.exe"; Description: "{cm:LaunchProgram,ZK Pull}"; Flags: nowait postinstall skipifsilent
-; The in-app updater runs this installer with /SILENT; start the new version when it is done.
-Filename: "{app}\ZK Pull.exe"; Flags: nowait; Check: WizardSilent
+; The in-app updater runs this installer with /SILENT /ZKUPDATE=1; start the new version when it is
+; done. Not after other silent installs: IT deploying for all users must not start it elevated.
+Filename: "{app}\ZK Pull.exe"; Flags: nowait; Check: IsInAppUpdate
 
 ; The database and log in %LOCALAPPDATA%\ZK Pull are left in place on uninstall: they hold the
 ; pulled attendance and the names HR typed in.
+
+[Code]
+function IsInAppUpdate: Boolean;
+begin
+  // Updaters before 0.4.0 do not pass /ZKUPDATE; their silent per-user runs are updates too.
+  Result := WizardSilent and ((ExpandConstant('{param:ZKUPDATE|0}') = '1') or not IsAdminInstallMode);
+end;

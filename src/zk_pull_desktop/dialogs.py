@@ -50,6 +50,7 @@ class DeviceForm(QFormLayout):
 	def __init__(self, device: Device | None = None):
 		super().__init__()
 		self.serial = device.serial if device else ""
+		self.testing = None  # the address being tested
 		self.name = QLineEdit(device.name if device else "")
 		self.ip = QLineEdit(device.ip if device else "")
 		self.ip.setPlaceholderText("192.168.1.201")
@@ -69,6 +70,13 @@ class DeviceForm(QFormLayout):
 		self.addRow(tr("port"), self.port)
 		self.addRow(tr("comm_key"), self.comm_key)
 		self.addRow(self.test_button, self.result)
+		# A serial read by Test belongs to the address tested; another address needs a new Test.
+		self.ip.textChanged.connect(self._address_changed)
+		self.port.valueChanged.connect(self._address_changed)
+
+	def _address_changed(self):
+		self.serial = ""  # saving an existing device without a Test keeps the serial it has
+		self.result.clear()
 
 	def is_empty(self):
 		return not self.name.text().strip() and not self.ip.text().strip()
@@ -87,21 +95,30 @@ class DeviceForm(QFormLayout):
 		)
 
 	def test(self):
+		if busy():  # the device answers one connection at a time
+			self.result.setText(tr("busy"))
+			return
 		if not self.ip.text().strip():
 			self.result.setText(tr("invalid_device"))
 			return
 		self.test_button.setEnabled(False)
 		self.result.setText("…")
+		self.testing = self._address()
 		run_in_background(
 			zk.probe,
-			self.ip.text().strip(),
-			self.port.value(),
+			*self.testing,
 			self.comm_key.value(),
 			on_done=self._tested,
 			on_failed=self._test_failed,
 		)
 
+	def _address(self):
+		return self.ip.text().strip(), self.port.value()
+
 	def _tested(self, info: zk.DeviceInfo):
+		if self.testing != self._address():
+			self.test_button.setEnabled(True)
+			return  # the address changed while testing: this serial is not the new address's
 		self.serial = info.serial
 		self.test_button.setEnabled(True)
 		self.result.setText(

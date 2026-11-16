@@ -138,3 +138,40 @@ def test_read_names_file_header_detection(tmp_path):
 	assert read_names_file(path) == {"A101": "Ali", "A102": "Omar"}
 	path.write_text("\n,\nEmployee ID,Name\n7,Huda\n", encoding="utf-8")  # blank rows, then the header
 	assert read_names_file(path) == {"7": "Huda"}
+
+
+def test_xlsx_keeps_error_like_names_as_text_and_names_the_daily_sheet(tmp_path):
+	path = tmp_path / "out.xlsx"
+	export.write(
+		path,
+		[row("1", "2026-11-01 08:00:00", "#N/A"), row("2", "2026-11-01 08:00:00", "#REF!")],
+		"xlsx",
+		"daily",
+		"en",
+	)
+	ws = load_workbook(path).active
+	assert ws.title == "Daily summary"
+	assert [(c.value, c.data_type) for c in (ws["B2"], ws["B3"])] == [("#N/A", "s"), ("#REF!", "s")]
+
+
+def test_names_file_ids_with_letters_are_not_taken_for_a_header(tmp_path):
+	path = tmp_path / "names.csv"
+	path.write_text("NO101,Sara\nID102,Omar\n", encoding="utf-8")
+	assert read_names_file(path) == {"NO101": "Sara", "ID102": "Omar"}
+
+
+def test_names_file_with_semicolons_arabic_digits_and_line_breaks(tmp_path):
+	path = tmp_path / "names.csv"
+	path.write_text('رقم;الاسم\n١٢;"سارة\nأحمد"\n‏7;Omar\n', encoding="utf-8")
+	assert read_names_file(path) == {"12": "سارة أحمد", "7": "Omar"}
+
+
+def test_names_file_without_names_is_an_error(tmp_path):
+	import pytest
+
+	from zk_pull_desktop.people_tab import NamesFileError
+
+	path = tmp_path / "names.csv"
+	path.write_text("just one column\nand another line\n", encoding="utf-8")
+	with pytest.raises(NamesFileError):
+		read_names_file(path)

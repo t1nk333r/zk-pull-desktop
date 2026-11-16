@@ -27,7 +27,7 @@ from .dialogs import FirstRunWizard, LanguageDialog
 from .i18n import tr
 from .people_tab import PeopleTab
 from .settings_tab import SettingsTab
-from .store import Store
+from .store import Store, check_file, is_damaged
 from .worker import run_in_background
 
 log = logging.getLogger(__name__)
@@ -144,6 +144,10 @@ class App:
 			FirstRunWizard(self.store).exec()  # every step can be skipped
 			self.store.set("first_run_done", "1")
 		self.show_main()
+		# The app often stays open for days: take the day's backup when the date changes too.
+		self.backup_timer = QTimer(interval=60 * 60 * 1000)
+		self.backup_timer.timeout.connect(lambda: daily_backup(self.store, self.data_dir))
+		self.backup_timer.start()
 		if self.store.get("check_updates", "1") == "1":
 			QTimer.singleShot(3000, lambda: self.check_for_updates(silent=True))
 		return self.qt_app.exec()
@@ -218,40 +222,82 @@ BACKUPS_KEPT = 7
 
 
 def daily_backup(store: Store, data_dir: Path):
-	"""One copy of the database per day in data_dir/backups, the last BACKUPS_KEPT days kept."""
+	"""One copy of the database per day in data_dir/backups, the last BACKUPS_KEPT days kept.
+
+	Store.backup only gives a file its final name once the copy is checked, so a failed backup is
+	simply tried again next time, and only good copies count towards the days kept."""
 	folder = data_dir / "backups"
 	target = folder / f"zk_pull_{date.today():%Y-%m-%d}.db"
 	try:
 		folder.mkdir(exist_ok=True)
 		if not target.exists():
 			store.backup(target)
+			log.info("Daily backup %s", target)
 		for old in sorted(folder.glob("zk_pull_*.db"))[:-BACKUPS_KEPT]:
 			old.unlink()
 	except (OSError, sqlite3.Error):
 		log.exception("Daily backup failed")
 
 
+class StartupError(Exception):
+	"""The database cannot be opened and must not be touched; the message is for the user."""
+
+
+def _move_aside(path: Path) -> Path:
+	damaged = path.with_name(f"zk_pull.damaged-{datetime.now():%Y%m%d-%H%M%S}.db")
+	try:
+		path.rename(damaged)
+	except OSError as e:
+		raise StartupError(
+			f"The database is damaged and could not be moved aside ({e.strerror or e}).\n"
+			"Close any program using it and start ZK Pull again.\n\n"
+			f"قاعدة البيانات تالفة وتعذّر نقلها ({e.strerror or e}).\n"
+			"أغلق أي برنامج يستخدمها ثم شغّل ZK Pull مرة أخرى."
+		) from e
+	return damaged
+
+
+def _restore(backup: Path, path: Path):
+	temp = path.with_name(path.name + ".restore")
+	shutil.copyfile(backup, temp)
+	os.replace(temp, path)
+	log.info("Restored %s", backup)
+
+
 def open_store(data_dir: Path) -> Store:
-	"""The database; a damaged one is moved aside and the latest daily backup offered instead."""
+	"""The database; a damaged one is moved aside and the newest good daily backup offered instead.
+
+	A database that is only locked or unreadable for the moment (another program has it open) is
+	left alone: moving it aside would make HR start from an old backup for no reason."""
 	path = data_dir / "zk_pull.db"
 	try:
 		return Store(path)
-	except sqlite3.DatabaseError:
+	except sqlite3.DatabaseError as e:
+		if not is_damaged(e):
+			log.exception("Database %s could not be opened", path)
+			raise StartupError(
+				f"The database could not be opened ({e}).\n"
+				"Close any other program using it, such as a database viewer, and start ZK Pull again.\n\n"
+				f"تعذّر فتح قاعدة البيانات ({e}).\n"
+				"أغلق أي برنامج آخر يستخدمها، مثل عارض قواعد البيانات، ثم شغّل ZK Pull مرة أخرى."
+			) from e
 		log.exception("Database %s is damaged", path)
-	damaged = path.with_name(f"zk_pull.damaged-{datetime.now():%Y%m%d-%H%M%S}.db")
-	path.rename(damaged)
-	backups = sorted((data_dir / "backups").glob("zk_pull_*.db"))
+	damaged = _move_aside(path)
+	# Newest first; a backup cut short by a full disk or a crash is passed over.
+	backup = next(
+		(b for b in sorted((data_dir / "backups").glob("zk_pull_*.db"), reverse=True) if check_file(b)), None
+	)
+	day = backup.stem.removeprefix("zk_pull_") if backup else ""
 	# Before the database opens the language is unknown, so both are shown.
-	if backups and messages.ask(
+	if backup and messages.ask(
 		None,
 		"ZK Pull",
 		f"The database was damaged and has been kept as {damaged.name}.\n"
-		f"Restore the backup of {backups[-1].stem.removeprefix('zk_pull_')}?\n\n"
+		f"Restore the backup of {day}?\n\n"
 		f"قاعدة البيانات تالفة، وحُفظت باسم {damaged.name}.\n"
-		f"هل تريد استعادة النسخة الاحتياطية بتاريخ {backups[-1].stem.removeprefix('zk_pull_')}؟",
+		f"هل تريد استعادة النسخة الاحتياطية بتاريخ {day}؟",
 	):
-		shutil.copyfile(backups[-1], path)
-		log.info("Restored %s", backups[-1])
+		_restore(backup, path)
 	else:
 		messages.warn(
 			None,
@@ -259,7 +305,13 @@ def open_store(data_dir: Path) -> Store:
 			f"The database was damaged and has been kept as {damaged.name}. ZK Pull starts empty.\n\n"
 			f"قاعدة البيانات تالفة، وحُفظت باسم {damaged.name}. سيبدأ ZK Pull بقاعدة بيانات فارغة.",
 		)
-	return Store(path)
+	try:
+		return Store(path)
+	except sqlite3.DatabaseError:
+		log.exception("The restored database %s does not open either; starting empty", path)
+		if path.exists():
+			_move_aside(path)
+		return Store(path)
 
 
 def data_directory() -> Path:
@@ -296,7 +348,12 @@ def main():
 		messages.info(None, "ZK Pull", "ZK Pull is already running.\nZK Pull يعمل بالفعل.")
 		return 0
 	log.info("ZK Pull %s starting, data in %s", __version__, data_dir)
-	store = open_store(data_dir)
+	try:
+		store = open_store(data_dir)
+	except StartupError as e:
+		messages.error(None, "ZK Pull", str(e))
+		lock.unlock()
+		return 1
 	daily_backup(store, data_dir)
 	try:
 		code = App(qt_app, store, data_dir).run()

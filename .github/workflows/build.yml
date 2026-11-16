@@ -51,6 +51,15 @@ jobs:
       - name: Build app
         run: uv run pyinstaller --noconfirm --windowed --name "ZK Pull" --icon packaging/icon.ico --add-data "src/zk_pull_desktop/assets:zk_pull_desktop/assets" packaging/zk_pull.py
 
+      - name: Licences next to the app
+        # LICENSE, the notices for bundled components and their licence texts; the installer and
+        # the portable zip both take the whole folder.
+        shell: pwsh
+        run: |
+          Copy-Item LICENSE "dist\ZK Pull\LICENSE.txt"
+          Copy-Item THIRD_PARTY_NOTICES.md "dist\ZK Pull\"
+          Copy-Item -Recurse packaging\licenses "dist\ZK Pull\licenses"
+
       - name: Build installer
         env:
           VERSION: ${{ steps.version.outputs.value }}

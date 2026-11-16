@@ -7,10 +7,9 @@ license = "CC-BY-NC-ND-4.0"
 authors = [{ name = "Abdulrahman Aloqayli" }]
 requires-python = ">=3.12,<3.14"
 dependencies = [
-	"pyside6>=6.8",
-	"pyzk>=0.9",
 	"openpyxl>=3.1",
 	"defusedxml>=0.7.1",
+	"pyside6-essentials>=6.8",
 ]
 
 [project.gui-scripts]

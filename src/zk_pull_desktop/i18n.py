@@ -67,7 +67,12 @@ TEXTS = {
 		"Pulled {ok} of {total} devices: {kept} punches from {start} to {end}, {new} of them new.",
 		"تم السحب من {ok} من أصل {total} أجهزة: عدد البصمات من {start} إلى {end}: {kept}، منها {new} جديدة.",
 	),
-	"pull_failures": ("Pull results:\n{devices}", "نتائج السحب:\n{devices}"),
+	"pull_results": ("Pull results:", "نتائج السحب:"),
+	"device_removed": (
+		"removed in Settings during the pull; nothing was saved",
+		"أُزيل من الإعدادات أثناء السحب، ولم يُحفظ شيء",
+	),
+	"pull_save_failed": ("could not be saved: {error}", "تعذّر الحفظ: {error}"),
 	"empty_no_devices": (
 		"No devices yet: add one in Settings.",
 		"لا توجد أجهزة بعد: أضف جهازًا من الإعدادات.",
@@ -75,6 +80,10 @@ TEXTS = {
 	"empty_no_punches": (
 		'No punches in this period. Press "Pull from device" to read the device.',
 		'لا توجد بصمات في هذه الفترة. اضغط "سحب من الجهاز" لقراءة الجهاز.',
+	),
+	"empty_no_match": (
+		"No punches in this period match the search.",
+		"لا توجد بصمات في هذه الفترة تطابق البحث.",
 	),
 	"from_after_to": ("The From date is after the To date.", "تاريخ البداية بعد تاريخ النهاية."),
 	"export_in_use": (
@@ -121,6 +130,14 @@ TEXTS = {
 	"import_file_hint": (
 		"The file needs two columns: employee ID, then name (a header row is fine).",
 		"يجب أن يحتوي الملف على عمودين: رقم الموظف ثم الاسم (يمكن أن يكون أول صف عناوين).",
+	),
+	"no_names_found": (
+		"No names were found in the file. It needs two columns: employee ID, then name.",
+		"لم يُعثر على أسماء في الملف. يجب أن يحتوي على عمودين: رقم الموظف ثم الاسم.",
+	),
+	"unnamed_added": (
+		"{count} IDs without a name were added; type the names in the Name column.",
+		"أُضيفت أرقام بلا اسم (العدد: {count})؛ اكتب الأسماء في عمود الاسم.",
 	),
 	"file_too_large": ("The file is too large for a names list.", "الملف أكبر من أن يكون قائمة أسماء."),
 	"confirm_overwrite": ("{path} already exists. Replace it?", "الملف {path} موجود. هل تريد استبداله؟"),
@@ -172,6 +189,7 @@ TEXTS = {
 		"يسحب سجلات الحضور من أجهزة ZKTeco ويصدّرها إلى Excel أو CSV. يقرأ من الأجهزة فقط.",
 	),
 	"about_icon": ("App icon by", "أيقونة البرنامج من"),
+	"third_party": ("Third-party licences", "تراخيص المكونات الأخرى"),
 	# Updates
 	"updates": ("Updates", "التحديثات"),
 	"check_updates_startup": ("Check for updates at startup", "التحقق من التحديثات عند التشغيل"),
@@ -222,7 +240,36 @@ TEXTS = {
 		"PC is on the same network.",
 		"لم يستجب الجهاز. تحقّق من عنوان IP والمنفذ، ومن أن الجهاز يعمل، وأن هذا الحاسوب على الشبكة نفسها.",
 	),
-	"err_device": ("The device sent unusable data ({detail}).", "أرسل الجهاز بيانات غير صالحة ({detail})."),
+	"err_device": (
+		"The device sent data ZK Pull cannot read ({detail}).",
+		"أرسل الجهاز بيانات لا يستطيع ZK Pull قراءتها ({detail}).",
+	),
+	"err_timeout": (
+		"The device stopped answering part-way. Try again; if it keeps happening, restart the device.",
+		"توقف الجهاز عن الاستجابة أثناء القراءة. حاول مرة أخرى، وإذا تكرر ذلك فأعد تشغيل الجهاز.",
+	),
+	"err_closed": (
+		"The device closed the connection. Try again in a minute: another program may be reading it.",
+		"أغلق الجهاز الاتصال. حاول مرة أخرى بعد دقيقة، فقد يكون برنامج آخر يقرأ منه.",
+	),
+	"err_too_much": (
+		"The device sent far more data than a device holds, so the pull was stopped.",
+		"أرسل الجهاز بيانات أكثر بكثير مما يتسع له أي جهاز، فأُوقف السحب.",
+	),
+	"err_no_serial": ("The device did not report a serial number.", "لم يُرسل الجهاز رقمه التسلسلي."),
+	"upd_offline": ("no connection to GitHub", "لا يوجد اتصال بـ GitHub"),
+	"upd_http": ("GitHub answered with error {code}", "أجاب GitHub بالخطأ {code}"),
+	"upd_bad_answer": ("GitHub sent an unexpected answer", "أرسل GitHub ردًا غير متوقع"),
+	"upd_bad_address": ("the download address is not this project's", "عنوان التنزيل لا يخص هذا البرنامج"),
+	"upd_no_checksum": ("the release has no published checksum", "الإصدار بلا بصمة رقمية منشورة"),
+	"upd_redirect": ("the download was sent to an unexpected address", "حُوّل التنزيل إلى عنوان غير متوقع"),
+	"upd_too_large": ("the download is larger than published", "الملف المنزَّل أكبر مما نُشر"),
+	"upd_too_slow": ("the download is too slow", "التنزيل بطيء جدًا"),
+	"upd_incomplete": ("the download is incomplete", "التنزيل غير مكتمل"),
+	"upd_checksum": (
+		"the download does not match the published checksum",
+		"الملف المنزَّل لا يطابق البصمة الرقمية المنشورة",
+	),
 	"cancelled": ("Cancelled.", "تم الإلغاء."),
 	"cancel": ("Cancel", "إلغاء"),
 	"skipped_records": (

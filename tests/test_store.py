@@ -106,3 +106,50 @@ def test_editing_a_device_keeps_the_serial_from_the_last_pull(store):
 	store.save_device(Device(device_id, "Main gate", "10.0.0.6"))  # edited without Test
 	d = store.device(device_id)
 	assert (d.name, d.ip, d.serial, d.last_pull) == ("Main gate", "10.0.0.6", "SN1", "2026-11-01 09:00:00")
+
+
+def test_a_device_deleted_during_a_pull_leaves_no_serial_behind(store):
+	gate = store.save_device(Device(None, "Gate", "10.0.0.5"))
+	store.delete_device(gate)
+	assert store.mark_pulled(gate, "SN1", datetime(2026, 11, 1, 9)) is False  # the pull finished late
+	other = store.save_device(Device(None, "Other", "10.0.0.6"))  # SQLite may reuse the id
+	assert store.serial_owner("SN1") is None
+	assert store.serials([other]) == []
+
+
+def test_a_serial_read_by_test_is_not_claimed_for_good(store):
+	a = store.save_device(Device(None, "A", "10.0.0.1", serial="S1"))
+	store.mark_pulled(a, "S1", datetime(2026, 11, 1, 9))
+	store.save_device(Device(a, "A", "10.0.0.2", serial="S2"))  # mistyped IP, Test read B's serial
+	store.save_device(Device(a, "A", "10.0.0.1", serial="S1"))  # corrected
+	assert store.serial_owner("S2") is None
+	assert store.serials([a]) == ["S1"]
+
+
+def test_a_tested_serial_counts_before_the_first_pull(store):
+	a = store.save_device(Device(None, "A", "10.0.0.1", serial="S1"))
+	assert store.serial_owner("S1") == a and store.serials([a]) == ["S1"]
+
+
+def test_the_last_possible_end_date_works(store):
+	store.add_punches([punch("1", "2026-11-01 08:00:00")])
+	assert len(store.punches(date(2000, 1, 1), date(9999, 12, 31))) == 1
+
+
+def test_ids_with_arabic_digits_and_direction_marks_are_normalized(store):
+	store.save_person(Person("‏١٢", "Sara"))
+	store.import_names({"۷": "Omar"})
+	assert [p.user_id for p in store.people()] == ["7", "12"]
+
+
+def test_backup_is_checked_before_it_takes_its_name(store, tmp_path, monkeypatch):
+	from zk_pull_desktop import store as store_module
+
+	good = tmp_path / "good.db"
+	store.backup(good)
+	assert store_module.check_file(good)
+	monkeypatch.setattr(store_module, "check_file", lambda path: False)
+	bad = tmp_path / "bad.db"
+	with pytest.raises(store_module.DamagedError):
+		store.backup(bad)
+	assert sorted(p.name for p in tmp_path.iterdir()) == ["good.db", "test.db"]

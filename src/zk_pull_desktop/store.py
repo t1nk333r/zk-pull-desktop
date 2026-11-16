@@ -1,8 +1,10 @@
 """Local SQLite database: devices, people (names for device user IDs), pulled punches and settings."""
 
+import os
 import sqlite3
+from contextlib import closing, suppress
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
 from .device import DEFAULT_PORT, Punch
@@ -50,6 +52,45 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 
+# Arabic-Indic and Persian digits typed or pasted as an employee ID are the same ID as on the device,
+# and pasted text can carry invisible direction marks.
+_ID_TABLE = str.maketrans(
+	{**{0x0660 + i: str(i) for i in range(10)}, **{0x06F0 + i: str(i) for i in range(10)}}
+	| dict.fromkeys([0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A)])
+)
+
+
+def normalize_id(text: str) -> str:
+	return str(text).translate(_ID_TABLE).strip()
+
+
+class DamagedError(sqlite3.DatabaseError):
+	"""The database file is corrupt, as opposed to locked or unreadable for the moment."""
+
+
+def is_damaged(e: sqlite3.DatabaseError) -> bool:
+	return isinstance(e, DamagedError) or getattr(e, "sqlite_errorname", "") in (
+		"SQLITE_CORRUPT",
+		"SQLITE_NOTADB",
+	)
+
+
+def check_file(path: Path) -> bool:
+	"""True if the database file at path opens read-only and passes a quick check."""
+	try:
+		with closing(sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)) as db:
+			return db.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+	except sqlite3.Error:
+		return False
+
+
+# (device_id, serial) for every serial a device is known by: the ones it was pulled from, and the one
+# Test read, which is the only one before its first pull.
+KNOWN_SERIALS = (
+	"SELECT device_id, serial FROM device_serials UNION SELECT id, serial FROM devices WHERE serial != ''"
+)
+
+
 @dataclass
 class Device:
 	id: int | None
@@ -95,18 +136,28 @@ class Store:
 	def check(self):
 		result = self.db.execute("PRAGMA quick_check").fetchone()[0]
 		if result != "ok":
-			raise sqlite3.DatabaseError(f"database check failed: {result}")
+			raise DamagedError(f"database check failed: {result}")
 
 	def close(self):
 		self.db.close()
 
 	def backup(self, path: Path):
-		"""A consistent copy of the whole database, safe to take while the app runs."""
-		target = sqlite3.connect(path)
+		"""A consistent copy of the whole database, safe to take while the app runs.
+
+		Written under a temporary name and checked before it takes the final name, so a full disk or
+		a crash never leaves a broken file that looks like a good backup."""
+		path = Path(path)
+		temp = path.with_name(path.name + ".tmp")
 		try:
-			self.db.backup(target)
+			with closing(sqlite3.connect(temp)) as target:
+				self.db.backup(target)
+			if not check_file(temp):
+				raise DamagedError(f"the copy at {temp} failed its check")
+			os.replace(temp, path)
 		finally:
-			target.close()
+			for leftover in (temp, temp.with_name(temp.name + "-journal")):
+				with suppress(OSError):
+					leftover.unlink(missing_ok=True)
 
 	# Settings
 
@@ -131,17 +182,20 @@ class Store:
 		return Device(**dict(row)) if row else None
 
 	def serials(self, device_ids) -> list[str]:
-		"""Every serial the given devices have reported."""
+		"""Every serial the given devices are known by."""
 		ids = list(device_ids)
 		rows = self.db.execute(
-			f"SELECT serial FROM device_serials WHERE device_id IN ({','.join('?' * len(ids))})", ids
+			f"SELECT serial FROM ({KNOWN_SERIALS}) WHERE device_id IN ({','.join('?' * len(ids))})", ids
 		)
 		return [r["serial"] for r in rows]
 
 	def serial_owner(self, serial) -> int | None:
-		"""The device a serial number belongs to, if any."""
-		row = self.db.execute("SELECT device_id FROM device_serials WHERE serial = ?", (serial,)).fetchone()
-		return row["device_id"] if row else None
+		"""The device a serial number belongs to, if any: one it was pulled from, else one whose Test
+		read it."""
+		row = self.db.execute(
+			f"SELECT device_id FROM ({KNOWN_SERIALS}) WHERE serial = ? ORDER BY device_id LIMIT 1", (serial,)
+		).fetchone()
+		return row[0] if row else None
 
 	def _remember_serial(self, device_id, serial):
 		if serial:
@@ -164,7 +218,8 @@ class Store:
 					"serial = coalesce(nullif(?, ''), serial) WHERE id = ?",
 					(d.name, d.ip, d.port, d.comm_key, d.serial, d.id),
 				)
-			self._remember_serial(d.id, d.serial)
+			# A serial read by Test is not added to device_serials: a mistyped IP would claim another
+			# device's serial for good. Only a confirmed pull (mark_pulled) does that.
 		return d.id
 
 	def delete_device(self, device_id):
@@ -173,13 +228,16 @@ class Store:
 			self.db.execute("DELETE FROM devices WHERE id = ?", (device_id,))
 			self.db.execute("DELETE FROM device_serials WHERE device_id = ?", (device_id,))
 
-	def mark_pulled(self, device_id, serial, when: datetime):
+	def mark_pulled(self, device_id, serial, when: datetime) -> bool:
+		"""Record a pull; False if the device no longer exists (deleted during the pull)."""
 		with self.db:
-			self.db.execute(
+			updated = self.db.execute(
 				"UPDATE devices SET serial = ?, last_pull = ? WHERE id = ?",
 				(serial, when.strftime(TS_FORMAT), device_id),
-			)
-			self._remember_serial(device_id, serial)
+			).rowcount
+			if updated:
+				self._remember_serial(device_id, serial)
+		return bool(updated)
 
 	# People
 
@@ -192,7 +250,7 @@ class Store:
 			self.db.execute(
 				"INSERT INTO people (user_id, name, department) VALUES (?, ?, ?) "
 				"ON CONFLICT (user_id) DO UPDATE SET name = excluded.name, department = excluded.department",
-				(p.user_id.strip(), p.name.strip(), p.department.strip()),
+				(normalize_id(p.user_id), p.name.strip(), p.department.strip()),
 			)
 
 	def delete_person(self, user_id):
@@ -204,7 +262,7 @@ class Store:
 		changed = 0
 		with self.db:
 			for user_id, name in names.items():
-				user_id, name = user_id.strip(), name.strip()
+				user_id, name = normalize_id(user_id), name.strip()
 				if not user_id or not name:
 					continue
 				if overwrite:
@@ -247,12 +305,13 @@ class Store:
 			"p.ts, p.punch, p.verify, coalesce(nullif(d.name, ''), p.serial) AS device "
 			"FROM punches p "
 			"LEFT JOIN people n ON n.user_id = p.user_id "
-			"LEFT JOIN (SELECT s.serial, min(d.name) AS name FROM device_serials s "
+			f"LEFT JOIN (SELECT s.serial, min(d.name) AS name FROM ({KNOWN_SERIALS}) s "
 			"JOIN devices d ON d.id = s.device_id GROUP BY s.serial) d "
 			"ON d.serial = p.serial "
-			"WHERE p.ts >= ? AND p.ts < ?"
+			"WHERE p.ts >= ? AND p.ts <= ?"
 		)
-		params = [start.strftime(DATE_FORMAT), (end + timedelta(days=1)).strftime(DATE_FORMAT)]
+		# "~" sorts after every digit, so "<end> ~" is after every time on the end day.
+		params = [start.strftime(DATE_FORMAT), end.strftime(DATE_FORMAT) + " ~"]
 		if serials is not None:
 			sql += f" AND p.serial IN ({','.join('?' * len(serials))})"
 			params += serials

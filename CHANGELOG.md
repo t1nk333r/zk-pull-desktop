@@ -2,6 +2,52 @@
 
 Each version's section becomes the description of its GitHub release.
 
+## 0.4.0 (2026-11-16)
+
+Installed from 0.2.0 or 0.3.0, the app offers this update by itself.
+
+**Changed**
+- **New licence:** ZK Pull is now Copyright (c) 2026 Abdulrahman Aloqayli under CC BY-NC-ND 4.0. The licences of the bundled components (Qt, PySide6, Python, openpyxl, defusedxml) now ship with the app, under **Settings → Third-party licences**.
+- **Own device client:** ZK Pull now talks to the devices with its own code instead of the pyzk library. It sends only read commands, and a test fails if any other command is sent. It gave identical results on the office device (12,880 punches, 27 users).
+- The installer is smaller: only the parts of Qt the app uses are included.
+
+**Fixed**
+- Deleting or editing a device while it was being pulled could block that device for good or give its history to the next device added; both now wait for the pull.
+- A serial number read by **Test connection** at a mistyped address no longer blocks the real device, and changing the IP or port after a Test no longer saves the old serial.
+- **Cancel** now works while a device that does not answer is still connecting.
+- Backups: a backup cut short (disk full, power cut) no longer takes the place of a good one; recovery offers the newest backup that passes a check; a database that is only locked by another program is no longer treated as damaged; the daily backup also runs when the app stays open for days.
+- A pull whose From date is after the To date is refused instead of reading the device for nothing; Export just after midnight uses the new day.
+- A failed save (disk full) no longer leaves a multi-device pull stuck on Cancel.
+- Device and update errors are shown in Arabic too, with the right cause (a timeout is no longer "unusable data").
+- Names files: IDs with letters (E001) no longer lose the first employee; files using semicolons and IDs typed in Arabic digits (١٢) now import; a file with no names is reported instead of "0 added".
+- Excel: names such as #N/A stay text, and the daily sheet name is no longer cut off.
+- Searching with no match now says so; a new person stays visible while a search is active; Arabic dates in Settings and the pull report read correctly.
+- Updates: installs "for me only" in any folder now update themselves, never ask for admin rights, and the app no longer starts after an IT silent install.
+
+<div dir="rtl">
+
+إذا كان الإصدار 0.2.0 أو 0.3.0 مثبّتًا فسيعرض البرنامج هذا التحديث تلقائيًا.
+
+**التغييرات**
+- **ترخيص جديد:** حقوق النشر © 2026 Abdulrahman Aloqayli بترخيص CC BY-NC-ND 4.0. وأصبحت تراخيص المكونات المضمّنة (Qt وPySide6 وPython وopenpyxl وdefusedxml) مرفقة بالبرنامج، في **الإعدادات ← تراخيص المكونات الأخرى**.
+- **برنامج اتصال خاص بالأجهزة:** أصبح ZK Pull يتصل بالأجهزة بشيفرته الخاصة بدلًا من مكتبة pyzk، ولا يرسل إلا أوامر القراءة، ويفشل اختبار آلي إذا أُرسل أي أمر آخر. وأعطى نتائج مطابقة على جهاز المكتب (12,880 بصمة و27 مستخدمًا).
+- المثبّت أصغر حجمًا: لا يضم إلا أجزاء Qt التي يستخدمها البرنامج.
+
+**الإصلاحات**
+- حذف جهاز أو تعديله أثناء السحب منه كان قد يمنع ذلك الجهاز نهائيًا أو يعطي سجله لأول جهاز يُضاف بعده؛ أصبح الاثنان ينتظران انتهاء السحب.
+- الرقم التسلسلي الذي يقرؤه **اختبار الاتصال** من عنوان خاطئ لم يعد يمنع الجهاز الصحيح، وتغيير عنوان IP أو المنفذ بعد الاختبار لم يعد يحفظ الرقم القديم.
+- زر **إلغاء** يعمل الآن أثناء محاولة الاتصال بجهاز لا يستجيب.
+- النسخ الاحتياطي: النسخة غير المكتملة (امتلاء القرص أو انقطاع الكهرباء) لم تعد تحل محل نسخة سليمة، والاستعادة تعرض أحدث نسخة تجتاز الفحص، وقاعدة البيانات المقفلة من برنامج آخر لم تعد تُعامل كتالفة، والنسخة اليومية تُؤخذ أيضًا عندما يبقى البرنامج مفتوحًا لأيام.
+- السحب الذي يكون فيه تاريخ البداية بعد تاريخ النهاية يُرفض بدلًا من قراءة الجهاز دون فائدة، والتصدير بعد منتصف الليل مباشرة يستخدم اليوم الجديد.
+- فشل الحفظ (امتلاء القرص) لم يعد يترك السحب من عدة أجهزة عالقًا على زر الإلغاء.
+- أخطاء الأجهزة والتحديث تظهر بالعربية أيضًا وبسببها الصحيح (انتهاء المهلة لم يعد يظهر كـ"بيانات غير صالحة").
+- ملفات الأسماء: الأرقام التي تحتوي حروفًا (E001) لم تعد تُسقط أول موظف، والملفات المفصولة بفاصلة منقوطة والأرقام المكتوبة بالأرقام العربية (١٢) أصبحت تُستورد، والملف الخالي من الأسماء يُبلَّغ عنه بدلًا من "أُضيف 0".
+- Excel: الأسماء مثل ‎#N/A تبقى نصًا، واسم ورقة الملخص اليومي لم يعد مقطوعًا.
+- البحث الذي لا يطابق شيئًا يقول ذلك الآن، والموظف الجديد يبقى ظاهرًا أثناء البحث، والتواريخ في الإعدادات وتقرير السحب تظهر صحيحة بالعربية.
+- التحديثات: التثبيت "لي فقط" في أي مجلد أصبح يحدّث نفسه ولا يطلب صلاحيات المسؤول أبدًا، ولم يعد البرنامج يبدأ بعد تثبيت صامت يجريه قسم تقنية المعلومات.
+
+</div>
+
 ## 0.3.0 (2026-11-12)
 
 Installed from 0.2.0, the app offers this update by itself. From 0.1.0, run the installer once by hand.

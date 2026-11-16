@@ -1,7 +1,6 @@
 """Run device I/O off the UI thread. Results come back on the UI thread; the database is only used there."""
 
 import logging
-import socket
 
 import shiboken6
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
@@ -34,7 +33,16 @@ class _Job(QObject):
 		if isinstance(owner, QObject) and not shiboken6.isValid(owner):
 			log.warning("Result of a background task dropped: its window was closed")
 			return
-		callback(value)
+		try:
+			callback(value)
+		except Exception as e:
+			# Saving a result can fail (disk full); the caller must still hear about it, or a
+			# multi-device pull would stop half-way with its Cancel button still showing.
+			log.exception("Handling the result of a background task failed")
+			if ok:
+				self.on_failed(error_message(e))
+			else:
+				raise
 
 
 class _Task(QRunnable):
@@ -72,23 +80,30 @@ def running() -> bool:
 	return bool(_jobs)
 
 
-def error_message(e: Exception) -> str:
-	"""A message HR can act on, instead of a Python exception."""
-	from .device import Cancelled, DeviceError  # here: device imports nothing from the UI side
+DEVICE_MESSAGES = {
+	"unreachable": "err_unreachable",
+	"comm_key": "err_comm_key",
+	"timeout": "err_timeout",
+	"closed": "err_closed",
+	"too_much": "err_too_much",
+	"no_serial": "err_no_serial",
+}
 
-	text = str(e)
+
+def error_message(e: Exception) -> str:
+	"""A message HR can act on, in their language, instead of a Python exception."""
+	# Imported here: device and updater import nothing from the UI side.
+	from .device import Cancelled, DeviceError
+	from .updater import UpdateError
+
 	if isinstance(e, Cancelled):
 		return tr("cancelled")
 	if isinstance(e, DeviceError):
-		return tr("err_device", detail=text)
-	if "Unauthenticated" in text:
-		return tr("err_comm_key")
-	if (
-		isinstance(e, TimeoutError | socket.timeout | ConnectionError)
-		or "timed out" in text
-		or "can't reach" in text
-	):
-		return tr("err_unreachable")
+		if e.reason in DEVICE_MESSAGES:
+			return tr(DEVICE_MESSAGES[e.reason])
+		return tr("err_device", detail=e.detail or e.reason)
+	if isinstance(e, UpdateError):
+		return tr(f"upd_{e.reason}", **e.values)
 	if isinstance(e, OSError):
-		return tr("err_unreachable") + f" ({e.strerror or text})"
-	return text or type(e).__name__
+		return f"{e.strerror or e}"
+	return str(e) or type(e).__name__

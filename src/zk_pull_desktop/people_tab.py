@@ -1,4 +1,5 @@
 import csv
+import io
 import logging
 import zipfile
 from itertools import islice
@@ -22,7 +23,7 @@ from PySide6.QtWidgets import (
 from . import device as zk
 from . import messages
 from .i18n import tr
-from .store import Person, Store
+from .store import Person, Store, normalize_id
 from .worker import busy, run_in_background
 
 log = logging.getLogger(__name__)
@@ -41,11 +42,22 @@ def _csv_text(path: Path) -> str:
 
 
 def _is_header(first, rest) -> bool:
-	"""A first row is a header if it names its columns, or if it is the only one without a numeric ID."""
+	"""A first row is a header if it names its columns, or if it is the only one without a numeric ID.
+
+	A cell with a digit is an ID ("E001", "NO123"), never a header, even if it contains "no" or "id"."""
 	cell = first[0].casefold() if first else ""
-	if cell.isdigit():
+	if any(ch.isdigit() for ch in cell):
 		return False
 	return any(word in cell for word in HEADER_WORDS) or any(r and r[0].isdigit() for r in rest)
+
+
+def _csv_rows(text: str):
+	"""Rows of a CSV with comma, semicolon or tab between columns (Excel uses ";" in many regions)."""
+	try:
+		dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t")
+	except csv.Error:
+		dialect = csv.excel
+	return csv.reader(io.StringIO(text, newline=""), dialect)
 
 
 MAX_FILE = 20 * 1024 * 1024  # a names list is a few KB; anything this big is not one
@@ -77,19 +89,22 @@ def read_names_file(path: Path) -> dict[str, str]:
 		]
 		wb.close()
 	else:
-		rows = [row[:2] for row in islice(csv.reader(_csv_text(path).splitlines()), MAX_ROWS)]
-	rows = [[cell.strip() for cell in row] for row in rows if any(cell.strip() for cell in row)]
+		rows = [row[:2] for row in islice(_csv_rows(_csv_text(path)), MAX_ROWS)]
+	# A line break inside a cell, or several spaces, become one space.
+	rows = [[" ".join(cell.split()) for cell in row] for row in rows if any(cell.strip() for cell in row)]
 	if rows and _is_header(rows[0], rows[1:]):
 		rows = rows[1:]
 	names = {}
 	for row in rows:
 		if len(row) < 2:
 			continue
-		user_id, name = row[0], row[1]
+		user_id, name = normalize_id(row[0]), row[1]
 		if user_id.endswith(".0") and user_id[:-2].isdigit():  # Excel stored the ID as a number
 			user_id = user_id[:-2]
 		if user_id and name:
 			names[user_id] = name
+	if rows and not names:  # a file with content but no ID/name pairs is the wrong file or layout
+		raise NamesFileError(tr("no_names_found"))
 	return names
 
 
@@ -154,7 +169,7 @@ class PeopleTab(QWidget):
 		self._filter()
 
 	def _filter(self):
-		needle = self.search.text().strip().casefold()
+		needle = normalize_id(self.search.text()).casefold()
 		for row in range(self.table.rowCount()):
 			text = " ".join(self.table.item(row, c).text() for c in range(3)).casefold()
 			self.table.setRowHidden(row, bool(needle) and needle not in text)
@@ -176,13 +191,14 @@ class PeopleTab(QWidget):
 
 	def add(self):
 		user_id, ok = QInputDialog.getText(self, tr("add"), tr("new_user_id"))
-		user_id = user_id.strip()
+		user_id = normalize_id(user_id)
 		if not ok or not user_id:
 			return
 		if any(p.user_id == user_id for p in self.store.people()):
 			messages.info(self, tr("app_title"), tr("duplicate_id"))
 			return
 		self.store.save_person(Person(user_id, ""))
+		self.search.clear()  # the new row must be visible to type its name
 		self.reload()
 		self._edit_name_of(user_id)
 
@@ -208,7 +224,10 @@ class PeopleTab(QWidget):
 		missing = self.store.unnamed_user_ids()
 		for user_id in missing:
 			self.store.save_person(Person(user_id, ""))
+		if missing:
+			self.search.clear()
 		self.reload()
+		self.status(tr("unnamed_added", count=len(missing)))
 		if missing:
 			self._edit_name_of(missing[0])
 

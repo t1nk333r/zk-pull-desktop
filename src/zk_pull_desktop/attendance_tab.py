@@ -27,7 +27,7 @@ from . import device as zk
 from . import export, messages
 from .i18n import is_rtl, isolate, punch_label, tr, verify_label
 from .periods import PERIODS, period_range
-from .store import PunchRow, Store
+from .store import PunchRow, Store, normalize_id
 from .worker import busy, run_in_background
 
 log = logging.getLogger(__name__)
@@ -182,6 +182,7 @@ class AttendanceTab(QWidget):
 		edit.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
 		edit.setCalendarPopup(True)
 		edit.setDisplayFormat("yyyy-MM-dd")
+		edit.setDateRange(QDate(2000, 1, 1), QDate(2099, 12, 31))  # ZK clocks count from 2000
 		edit.calendarWidget().setFirstDayOfWeek(Qt.DayOfWeek.Sunday)
 		return edit
 
@@ -240,7 +241,7 @@ class AttendanceTab(QWidget):
 		if self.device.currentData() is not None:
 			serials = self.store.serials([self.device.currentData()])  # every serial it has reported
 		rows = self.store.punches(start, end, serials)
-		needle = self.search.text().strip().casefold()
+		needle = normalize_id(self.search.text()).casefold()
 		if needle:
 			rows = [p for p in rows if needle in f"{p.user_id} {p.name} {p.department}".casefold()]
 		return rows
@@ -267,7 +268,7 @@ class AttendanceTab(QWidget):
 			self.summary.setText(tr("empty_no_devices"))
 			return
 		if not self.model.rows:
-			self.summary.setText(tr("empty_no_punches"))
+			self.summary.setText(tr("empty_no_match" if self.search.text().strip() else "empty_no_punches"))
 			return
 		text = tr("shown", count=len(self.model.rows), start=f"{start:%Y-%m-%d}", end=f"{end:%Y-%m-%d}")
 		unnamed = len({p.user_id for p in self.model.rows if not p.name})
@@ -289,6 +290,9 @@ class AttendanceTab(QWidget):
 			return
 		if self.period.currentData() != "custom":
 			self._apply_period()
+		if self.range()[0] > self.range()[1]:
+			messages.info(self, tr("app_title"), tr("from_after_to"))
+			return
 		self.queue = self.selected_devices()
 		self.results = []
 		self.notes = []  # warnings that are not failures (records left out)
@@ -315,7 +319,13 @@ class AttendanceTab(QWidget):
 		d = self.queue[0]
 		self.status(tr("pulling", device=d.name))
 		run_in_background(
-			zk.read_punches, d.ip, d.port, d.comm_key, on_done=self._pulled, on_failed=self._pull_failed
+			zk.read_punches,
+			d.ip,
+			d.port,
+			d.comm_key,
+			period=self.pull_range,
+			on_done=self._pulled,
+			on_failed=self._pull_failed,
 		)
 
 	def _accept_serial(self, d, serial) -> str:
@@ -325,7 +335,8 @@ class AttendanceTab(QWidget):
 			# Another device's serial at this IP: addresses swapped, or a device pretending.
 			other = self.store.device(owner)
 			return tr("serial_taken", serial=serial, other=other.name if other else owner)
-		known = self.store.serials([d.id])
+		# Serials it was pulled from; before its first pull, the one Test read when it was added.
+		known = self.store.serials([d.id]) or ([d.serial] if d.serial else [])
 		if known and serial not in known:
 			# A new mainboard brings a new serial; so does a different device at this address.
 			question = tr("serial_changed", device=d.name, old=d.serial or known[-1], new=serial)
@@ -334,26 +345,35 @@ class AttendanceTab(QWidget):
 		return ""
 
 	def _pulled(self, result: zk.PullResult):
-		d = self.queue[0]
+		queued = self.queue.pop(0)
+		try:
+			outcome = self._save_pull(queued, result)
+		except Exception as e:  # disk full and the like: report it and go on with the next device
+			log.exception("Saving the pull from %s failed", queued.name)
+			outcome = (queued.name, None, tr("pull_save_failed", error=e))
+		self.results.append(outcome)
+		self._pull_next()
+
+	def _save_pull(self, queued, result: zk.PullResult):
+		"""(device name, new punches or None, punches in the period or the reason nothing was saved)."""
+		d = self.store.device(queued.id)  # fresh: it may have been edited or removed during the pull
+		if d is None:
+			return (queued.name, None, tr("device_removed"))
 		refused = self._accept_serial(d, result.serial)
-		self.queue.pop(0)
 		if refused:
 			log.warning("Pull from %s: %s", d.name, refused)
-			self.results.append((d.name, None, refused))
-			self._pull_next()
-			return
+			return (d.name, None, refused)
 		start, end = self.pull_range
-		in_period = [p for p in result.punches if start <= p.timestamp.date() <= end]
-		new = self.store.add_punches(in_period)
-		self.store.mark_pulled(d.id, result.serial, datetime.now())
+		new = self.store.add_punches(result.punches)  # read_punches kept only the period's punches
+		if not self.store.mark_pulled(d.id, result.serial, datetime.now()):
+			return (d.name, None, tr("device_removed"))
 		log.info(
 			"Pulled %s (%s): %d punches on the device, %d in %s..%s, %d new",
-			d.name, result.serial, len(result.punches), len(in_period), start, end, new,
+			d.name, result.serial, result.total, len(result.punches), start, end, new,
 		)  # fmt: skip
 		if result.skipped:
 			self.notes.append(tr("skipped_records", device=d.name, count=result.skipped))
-		self.results.append((d.name, new, len(in_period)))
-		self._pull_next()
+		return (d.name, new, len(result.punches))
 
 	def _pull_failed(self, message):
 		# No dialog here: with several devices, one that is off must not stop the others.
@@ -378,14 +398,14 @@ class AttendanceTab(QWidget):
 			)  # fmt: skip
 		else:
 			self.status("")
-		problems = [f"• {name}: {error}" for name, _new, error in failed] + [
+		# One line each, the device name isolated per line: a line break ends a direction isolate.
+		name = isolate if is_rtl() else str
+		problems = [f"• {name(device)}: {error}" for device, _new, error in failed] + [
 			f"• {note}" for note in self.notes
 		]
 		if problems:
 			messages.warn(
-				self,
-				tr("error") if failed else tr("app_title"),
-				tr("pull_failures", devices="\n".join(problems)),
+				self, tr("error") if failed else tr("app_title"), "\n".join([tr("pull_results"), *problems])
 			)
 
 	# Export
@@ -399,6 +419,8 @@ class AttendanceTab(QWidget):
 		return name
 
 	def export(self):
+		if self.period.currentData() != "custom":
+			self._apply_period()  # "Today" after midnight is the new day, even if the tab stayed open
 		start, end = self.range()
 		if start > end:
 			messages.info(self, tr("app_title"), tr("from_after_to"))
