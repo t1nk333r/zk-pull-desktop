@@ -52,12 +52,14 @@ def _is_header(first, rest) -> bool:
 
 
 def _csv_rows(text: str):
-	"""Rows of a CSV with comma, semicolon or tab between columns (Excel uses ";" in many regions)."""
-	try:
-		dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t")
-	except csv.Error:
-		dialect = csv.excel
-	return csv.reader(io.StringIO(text, newline=""), dialect)
+	"""Rows of a CSV with comma, semicolon or tab between columns (Excel uses ";" in many regions).
+
+	The separator is the one used most in the first line; csv.Sniffer is not used because its result
+	differs between Python patch releases (3.12.10, which the Windows build bundles, gives up on
+	files that later releases read)."""
+	first = next((line for line in text.splitlines() if line.strip()), "")
+	delimiter = max(",;\t", key=first.count) if any(d in first for d in ",;\t") else ","
+	return csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
 
 
 MAX_FILE = 20 * 1024 * 1024  # a names list is a few KB; anything this big is not one
