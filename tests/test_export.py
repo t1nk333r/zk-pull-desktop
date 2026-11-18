@@ -175,3 +175,91 @@ def test_names_file_without_names_is_an_error(tmp_path):
 	path.write_text("just one column\nand another line\n", encoding="utf-8")
 	with pytest.raises(NamesFileError):
 		read_names_file(path)
+
+
+def test_csv_keeps_leading_zero_and_long_ids_and_escapes_error_literals(tmp_path):
+	path = tmp_path / "out.csv"
+	rows = [
+		row("0012", "2026-11-01 08:00:00", "#N/A"),
+		row("1234567890123456", "2026-11-01 08:00:00"),
+		row("12", "2026-11-01 08:00:00"),
+	]
+	export.write(path, rows, "csv", "log", "en")
+	with open(path, encoding="utf-8-sig", newline="") as f:
+		data = list(csv.reader(f))[1:]
+	assert [r[0] for r in data] == ['="0012"', '="1234567890123456"', "12"]
+	assert data[0][1] == "'#N/A"
+
+
+def test_a_failed_export_leaves_the_existing_file(tmp_path, monkeypatch):
+	import pytest
+
+	path = tmp_path / "out.xlsx"
+	path.write_bytes(b"the export from yesterday")
+
+	def broken(*args):
+		raise OSError("network share dropped")
+
+	monkeypatch.setattr(export, "_write_xlsx", broken)
+	with pytest.raises(OSError):
+		export.write(path, PUNCHES, "xlsx", "log", "en")
+	assert path.read_bytes() == b"the export from yesterday"
+	assert list(tmp_path.iterdir()) == [path]  # no temporary file left
+
+
+def test_replacing_a_file_open_in_excel_is_reported_as_in_use(tmp_path, monkeypatch):
+	import pytest
+
+	def locked(src, dst):
+		raise PermissionError(13, "Permission denied")
+
+	monkeypatch.setattr(export.os, "replace", locked)
+	with pytest.raises(export.FileInUseError):
+		export.write(tmp_path / "out.csv", PUNCHES, "csv", "log", "en")
+
+
+def test_one_bad_byte_in_a_utf8_names_file_is_an_error_not_mojibake(tmp_path):
+	import pytest
+
+	from zk_pull_desktop.people_tab import NamesFileError
+
+	path = tmp_path / "names.csv"
+	path.write_bytes("1,سارة\n2,محمد\n3,Ren".encode() + b"\xe9\n")  # one cp1252 byte, line 3
+	with pytest.raises(NamesFileError, match="3"):
+		read_names_file(path)
+	path.write_bytes(b"\xef\xbb\xbf1,Ali\n2,Ren\xe9\n")  # a UTF-8 BOM says what the file is
+	with pytest.raises(NamesFileError):
+		read_names_file(path)
+
+
+def test_names_file_in_utf16(tmp_path):
+	import pytest
+
+	from zk_pull_desktop.people_tab import NamesFileError
+
+	path = tmp_path / "names.csv"
+	path.write_bytes("1\tسارة\n2\tOmar\n".encode("utf-16"))  # Excel's "Unicode Text", with a BOM
+	assert read_names_file(path) == {"1": "سارة", "2": "Omar"}
+	path.write_bytes("1,Sara\n".encode("utf-16-le"))  # no BOM: refused, not read as junk
+	with pytest.raises(NamesFileError):
+		read_names_file(path)
+
+
+def test_names_file_separator_inside_quotes_does_not_count(tmp_path):
+	path = tmp_path / "names.csv"
+	path.write_text('1;"Al-Ahmad, Mohammed"\n2;Sara\n', encoding="utf-8")
+	assert read_names_file(path) == {"1": "Al-Ahmad, Mohammed", "2": "Sara"}
+	path.write_text('1,"Ahmed; Jr"\n2,Sara\n', encoding="utf-8")
+	assert read_names_file(path) == {"1": "Ahmed; Jr", "2": "Sara"}
+
+
+def test_names_xlsx_keeps_leading_zeros_of_a_zero_padded_number(tmp_path):
+	from openpyxl import Workbook
+
+	wb = Workbook()
+	wb.active.append([12, "Sara"])
+	wb.active["A1"].number_format = "0000"  # shows 0012
+	wb.active.append([7, "Omar"])
+	path = tmp_path / "names.xlsx"
+	wb.save(path)
+	assert read_names_file(path) == {"0012": "Sara", "7": "Omar"}

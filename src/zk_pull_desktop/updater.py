@@ -106,7 +106,7 @@ def download_setup(release: Release, folder: Path | None = None, timeout=60) -> 
 	path = folder / f"ZK-Pull-Setup-{release.version}.exe"
 	sha, size, started = hashlib.sha256(), 0, time.monotonic()
 	try:
-		with _get(release.setup_url, timeout) as response, open(path, "wb") as f:
+		with _get(release.setup_url, timeout) as response, _open_for_writing(path) as f:
 			final = urllib.parse.urlsplit(getattr(response, "url", release.setup_url) or release.setup_url)
 			if final.scheme != "https" or final.hostname not in DOWNLOAD_HOSTS:
 				raise UpdateError("redirect", str(final.hostname))
@@ -117,11 +117,17 @@ def download_setup(release: Release, folder: Path | None = None, timeout=60) -> 
 				if time.monotonic() - started > DOWNLOAD_DEADLINE:
 					raise UpdateError("too_slow")
 				sha.update(chunk)
-				f.write(chunk)
+				try:
+					f.write(chunk)
+				except OSError as e:
+					raise _disk_error(e) from e
 		if size != release.setup_size:
 			raise UpdateError("incomplete")
 		if sha.hexdigest() != release.setup_sha256.lower():
 			raise UpdateError("checksum")
+	except urllib.error.HTTPError as e:  # an OSError too, but GitHub answered: not a network problem
+		path.unlink(missing_ok=True)
+		raise UpdateError("http", code=e.code) from e
 	except OSError as e:
 		path.unlink(missing_ok=True)
 		raise _network_error(e) from e
@@ -129,6 +135,18 @@ def download_setup(release: Release, folder: Path | None = None, timeout=60) -> 
 		path.unlink(missing_ok=True)
 		raise
 	return path
+
+
+def _disk_error(e: OSError) -> UpdateError:
+	detail = e.strerror or str(e)
+	return UpdateError("disk", detail, error=detail)
+
+
+def _open_for_writing(path: Path):
+	try:
+		return open(path, "wb")
+	except OSError as e:
+		raise _disk_error(e) from e
 
 
 def remove_old_downloads(keep: Path | None = None):
@@ -178,8 +196,10 @@ def per_user_install() -> bool:
 	return bool(local) and exe_dir.is_relative_to(Path(local).resolve())
 
 
-def run_installer(path: Path):
-	"""Start the installer and return at once; the caller must quit so the files can be replaced."""
+def run_installer(path: Path, log_file: Path | None = None):
+	"""Start the installer and return at once; the caller must quit so the files can be replaced.
+
+	log_file: where the installer writes its log, for IT when an update did not go through."""
 	flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 	# /CURRENTUSER: never the all-users mode, whose UAC prompt HR cannot approve. /ZKUPDATE=1 tells
 	# the installer to start the new version when it is done (installer.iss).
@@ -193,6 +213,7 @@ def run_installer(path: Path):
 			"/NORESTART",
 			"/CURRENTUSER",
 			"/ZKUPDATE=1",
+			*([f"/LOG={log_file}"] if log_file else []),
 		],
 		creationflags=flags,
 		close_fds=True,

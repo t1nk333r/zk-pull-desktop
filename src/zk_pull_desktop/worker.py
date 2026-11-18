@@ -15,6 +15,12 @@ _jobs = set()  # keeps each _Job alive until its result is delivered
 _pool = QThreadPool()
 
 
+def _owner(callback) -> QObject | None:
+	"""The widget a callback is a method of, also through functools.partial."""
+	owner = getattr(getattr(callback, "func", callback), "__self__", None)
+	return owner if isinstance(owner, QObject) else None
+
+
 class _Job(QObject):
 	finished = Signal(bool, object)
 
@@ -29,8 +35,8 @@ class _Job(QObject):
 	def _deliver(self, ok, value):
 		_jobs.discard(self)
 		callback = self.on_done if ok else self.on_failed
-		owner = getattr(callback, "__self__", None)
-		if isinstance(owner, QObject) and not shiboken6.isValid(owner):
+		owner = _owner(callback)
+		if owner is not None and not shiboken6.isValid(owner):
 			log.warning("Result of a background task dropped: its window was closed")
 			return
 		try:
@@ -73,6 +79,12 @@ def run_in_background(fn, *args, on_done, on_failed, device=True, **kwargs):
 def busy() -> bool:
 	"""True while a device operation is running. The device answers one connection at a time."""
 	return any(job.device for job in _jobs)
+
+
+def window_busy() -> bool:
+	"""True while a task whose result goes to a window is running, such as a names-file import.
+	Rebuilding the window then would drop that result."""
+	return any(_owner(job.on_done) is not None for job in _jobs)
 
 
 def running() -> bool:

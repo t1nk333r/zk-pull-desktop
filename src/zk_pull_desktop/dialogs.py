@@ -1,3 +1,5 @@
+import ipaddress
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
 	QDialog,
@@ -16,8 +18,24 @@ from PySide6.QtWidgets import (
 from . import device as zk
 from . import messages
 from .i18n import LANGUAGES, tr
-from .store import Device, Store
+from .store import Device, Store, normalize_id
 from .worker import busy, run_in_background
+
+
+def normalize_ip(text: str) -> str | None:
+	"""The address as Windows should get it, or None if it is not a device on the office network.
+
+	Leading zeros are dropped: Windows reads 192.168.100.056 as octal and connects to .46."""
+	parts = normalize_id(text).split(".")
+	if len(parts) != 4 or not all(p.isascii() and p.isdigit() for p in parts):
+		return None  # hostnames too: the app is for the LAN, by address
+	try:
+		address = ipaddress.IPv4Address(".".join(str(int(p)) for p in parts))
+	except ValueError:
+		return None
+	if address.is_global or address.is_multicast or address.is_unspecified:
+		return None
+	return str(address)
 
 
 class LanguageDialog(QDialog):
@@ -84,11 +102,19 @@ class DeviceForm(QFormLayout):
 	def is_valid(self):
 		return bool(self.name.text().strip() and self.ip.text().strip())
 
+	def problem(self) -> str:
+		"""Why the form cannot be saved, or ""."""
+		if not self.is_valid():
+			return tr("invalid_device")
+		if normalize_ip(self.ip.text()) is None:
+			return tr("invalid_ip")
+		return ""
+
 	def device(self, device_id=None) -> Device:
 		return Device(
 			device_id,
 			self.name.text().strip(),
-			self.ip.text().strip(),
+			normalize_ip(self.ip.text()) or self.ip.text().strip(),
 			self.port.value(),
 			self.comm_key.value(),
 			self.serial,
@@ -98,8 +124,8 @@ class DeviceForm(QFormLayout):
 		if busy():  # the device answers one connection at a time
 			self.result.setText(tr("busy"))
 			return
-		if not self.ip.text().strip():
-			self.result.setText(tr("invalid_device"))
+		if normalize_ip(self.ip.text()) is None:
+			self.result.setText(tr("invalid_ip"))
 			return
 		self.test_button.setEnabled(False)
 		self.result.setText("…")
@@ -113,7 +139,7 @@ class DeviceForm(QFormLayout):
 		)
 
 	def _address(self):
-		return self.ip.text().strip(), self.port.value()
+		return normalize_ip(self.ip.text()) or self.ip.text().strip(), self.port.value()
 
 	def _tested(self, info: zk.DeviceInfo):
 		if self.testing != self._address():
@@ -149,8 +175,9 @@ class DeviceDialog(QDialog):
 		layout.addWidget(buttons)
 
 	def _save(self):
-		if not self.form.is_valid():
-			messages.warn(self, tr("error"), tr("invalid_device"))
+		problem = self.form.problem()
+		if problem:
+			messages.warn(self, tr("error"), problem)
 			return
 		self.accept()
 
@@ -174,8 +201,9 @@ class _DevicePage(QWizardPage):
 			return False
 		if self.form.is_empty():
 			return True  # skipped
-		if not self.form.is_valid():
-			messages.warn(self, tr("error"), tr("invalid_device"))
+		problem = self.form.problem()
+		if problem:
+			messages.warn(self, tr("error"), problem)
 			return False
 		self.store.save_device(self.form.device())
 		return True

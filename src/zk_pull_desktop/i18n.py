@@ -90,6 +90,21 @@ TEXTS = {
 		"Could not save {path}: the file is open in another program, probably Excel. Close it and try again.",
 		"تعذّر حفظ {path}: الملف مفتوح في برنامج آخر، غالبًا Excel. أغلقه ثم حاول مرة أخرى.",
 	),
+	"export_denied": (
+		"Could not save the file: {error}. Windows did not allow writing to this folder; choose another one, "
+		"such as Documents.",
+		"تعذّر حفظ الملف: {error}. لم يسمح Windows بالكتابة في هذا المجلد؛ اختر مجلدًا آخر مثل المستندات.",
+	),
+	"not_pulled": (
+		"{count} days in this period were never pulled from {devices}; they show no punches.",
+		"أيام من هذه الفترة لم تُسحب من {devices} (العدد: {count})، لذا لا تظهر لها بصمات.",
+	),
+	"confirm_export_gaps": (
+		"{count} days in this period were never pulled from {devices}, so they would look like absences "
+		"in the file. Export anyway?",
+		"أيام من هذه الفترة لم تُسحب من {devices} (العدد: {count})، فستظهر في الملف كأنها أيام غياب. هل تريد "
+		"التصدير على أي حال؟",
+	),
 	"layout_log_short": ("Punch log", "سجل البصمات"),
 	"layout_daily_short": ("Daily summary", "ملخص يومي"),
 	# Columns (also used as export headers)
@@ -140,6 +155,12 @@ TEXTS = {
 		"أُضيفت أرقام بلا اسم (العدد: {count})؛ اكتب الأسماء في عمود الاسم.",
 	),
 	"file_too_large": ("The file is too large for a names list.", "الملف أكبر من أن يكون قائمة أسماء."),
+	"bad_encoding": (
+		"Line {line} of the file has characters that are not valid UTF-8, so the names cannot be read "
+		'safely. Save the file again as "CSV UTF-8" and import it again.',
+		"السطر {line} في الملف يحتوي على أحرف غير صالحة بترميز UTF-8، فلا يمكن قراءة الأسماء بأمان. احفظ "
+		'الملف مرة أخرى بصيغة "CSV UTF-8" ثم استورده من جديد.',
+	),
 	"confirm_overwrite": ("{path} already exists. Replace it?", "الملف {path} موجود. هل تريد استبداله؟"),
 	"new_user_id": ("Employee ID (as on the device):", "رقم الموظف (كما في الجهاز):"),
 	"confirm_delete_person": ("Delete {name}?", "حذف {name}؟"),
@@ -175,6 +196,10 @@ TEXTS = {
 	"browse": ("Browse…", "استعراض…"),
 	"data_folder": ("Data folder", "مجلد البيانات"),
 	"invalid_device": ("Name and IP address are required.", "الاسم وعنوان IP مطلوبان."),
+	"invalid_ip": (
+		"Enter the device's IP address on the office network, such as 192.168.1.201.",
+		"أدخل عنوان IP للجهاز على شبكة المكتب، مثل 192.168.1.201.",
+	),
 	"open_data_folder": ("Open data folder", "فتح مجلد البيانات"),
 	"open_log": ("Open log", "فتح السجل"),
 	"backup": ("Back up database…", "نسخ احتياطي لقاعدة البيانات…"),
@@ -259,6 +284,10 @@ TEXTS = {
 	"err_no_serial": ("The device did not report a serial number.", "لم يُرسل الجهاز رقمه التسلسلي."),
 	"upd_offline": ("no connection to GitHub", "لا يوجد اتصال بـ GitHub"),
 	"upd_http": ("GitHub answered with error {code}", "أجاب GitHub بالخطأ {code}"),
+	"upd_disk": (
+		"the download could not be saved ({error}); check the free space on drive C:",
+		"تعذّر حفظ الملف المنزَّل ({error})؛ تحقّق من المساحة الفارغة في القرص C:",
+	),
 	"upd_bad_answer": ("GitHub sent an unexpected answer", "أرسل GitHub ردًا غير متوقع"),
 	"upd_bad_address": ("the download address is not this project's", "عنوان التنزيل لا يخص هذا البرنامج"),
 	"upd_no_checksum": ("the release has no published checksum", "الإصدار بلا بصمة رقمية منشورة"),

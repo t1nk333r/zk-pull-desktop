@@ -105,3 +105,27 @@ def test_installer_runs_per_user_and_relaunches(monkeypatch):
 	monkeypatch.setattr(updater.subprocess, "Popen", lambda args, **kwargs: calls.append(args))
 	updater.run_installer(updater.Path("setup.exe"))
 	assert "/CURRENTUSER" in calls[0] and "/ZKUPDATE=1" in calls[0]
+
+
+def test_download_errors_name_their_cause(tmp_path, monkeypatch):
+	import urllib.error
+
+	def missing(url, timeout):
+		raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+	monkeypatch.setattr(updater, "_get", missing)
+	with pytest.raises(updater.UpdateError) as e:
+		updater.download_setup(updater.release_from_api(api()), tmp_path)
+	assert (e.value.reason, e.value.values) == ("http", {"code": 404})
+
+	monkeypatch.setattr(updater, "_get", lambda url, timeout: io.BytesIO(PAYLOAD))
+	with pytest.raises(updater.UpdateError) as e:
+		updater.download_setup(updater.release_from_api(api()), tmp_path / "no such folder")
+	assert e.value.reason == "disk"
+
+
+def test_installer_writes_a_log_when_asked(monkeypatch):
+	calls = []
+	monkeypatch.setattr(updater.subprocess, "Popen", lambda args, **kwargs: calls.append(args))
+	updater.run_installer(updater.Path("setup.exe"), updater.Path("C:/data/update.log"))
+	assert calls[0][-1] == f"/LOG={updater.Path('C:/data/update.log')}"

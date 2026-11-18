@@ -1,6 +1,7 @@
 import logging
 import re
 from datetime import date, datetime
+from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QDate, QModelIndex, Qt, QUrl
@@ -267,14 +268,31 @@ class AttendanceTab(QWidget):
 		if not self.store.devices() and not self.model.rows:
 			self.summary.setText(tr("empty_no_devices"))
 			return
+		gaps = self._gaps()
 		if not self.model.rows:
-			self.summary.setText(tr("empty_no_match" if self.search.text().strip() else "empty_no_punches"))
+			text = tr("empty_no_match" if self.search.text().strip() else "empty_no_punches")
+			self.summary.setText(text + ("  ·  " + tr("not_pulled", **gaps) if gaps else ""))
 			return
 		text = tr("shown", count=len(self.model.rows), start=f"{start:%Y-%m-%d}", end=f"{end:%Y-%m-%d}")
 		unnamed = len({p.user_id for p in self.model.rows if not p.name})
 		if unnamed:
 			text += "  ·  " + tr("unnamed_hint", count=unnamed)
+		if gaps:
+			text += "  ·  " + tr("not_pulled", **gaps)
 		self.summary.setText(text)
+
+	def _gaps(self) -> dict | None:
+		"""{count, devices} for the days in the chosen range that a selected device was never pulled
+		for, up to today; None when every day was pulled. Those days show no punches, like absences."""
+		start, end = self.range()
+		missing = self.store.days_not_pulled(
+			[d.id for d in self.selected_devices()], start, end, date.today()
+		)
+		if not missing:
+			return None
+		days = {day for d in missing.values() for day in d}
+		devices = ", ".join(d.name for d in self.selected_devices() if d.id in missing)
+		return {"count": len(days), "devices": isolate(devices) if is_rtl() else devices}
 
 	# Pull
 
@@ -324,8 +342,9 @@ class AttendanceTab(QWidget):
 			d.port,
 			d.comm_key,
 			period=self.pull_range,
-			on_done=self._pulled,
-			on_failed=self._pull_failed,
+			# The device goes with the callbacks, so a failure is always booked to the right one.
+			on_done=partial(self._pulled, d),
+			on_failed=partial(self._pull_failed, d),
 		)
 
 	def _accept_serial(self, d, serial) -> str:
@@ -344,8 +363,8 @@ class AttendanceTab(QWidget):
 				return tr("serial_refused", serial=serial)
 		return ""
 
-	def _pulled(self, result: zk.PullResult):
-		queued = self.queue.pop(0)
+	def _pulled(self, queued, result: zk.PullResult):
+		self.queue.pop(0)
 		try:
 			outcome = self._save_pull(queued, result)
 		except Exception as e:  # disk full and the like: report it and go on with the next device
@@ -365,7 +384,7 @@ class AttendanceTab(QWidget):
 			return (d.name, None, refused)
 		start, end = self.pull_range
 		new = self.store.add_punches(result.punches)  # read_punches kept only the period's punches
-		if not self.store.mark_pulled(d.id, result.serial, datetime.now()):
+		if not self.store.mark_pulled(d.id, result.serial, datetime.now(), self.pull_range):
 			return (d.name, None, tr("device_removed"))
 		log.info(
 			"Pulled %s (%s): %d punches on the device, %d in %s..%s, %d new",
@@ -375,9 +394,15 @@ class AttendanceTab(QWidget):
 			self.notes.append(tr("skipped_records", device=d.name, count=result.skipped))
 		return (d.name, new, len(result.punches))
 
-	def _pull_failed(self, message):
+	def _pull_failed(self, d, message):
+		if not self.queue or self.queue[0] is not d:
+			# _pulled had taken d off the queue already and then failed showing the results; d's
+			# punches are saved, and the pull went on or ended there.
+			self.pull_button.setText(tr("cancel") if self.queue else tr("pull") + "  (F5)")
+			messages.warn(self, tr("error"), message)
+			return
 		# No dialog here: with several devices, one that is off must not stop the others.
-		d = self.queue.pop(0)
+		self.queue.pop(0)
 		log.warning("Pull from %s failed: %s", d.name, message)
 		self.results.append((d.name, None, message))
 		self._pull_next()
@@ -429,6 +454,9 @@ class AttendanceTab(QWidget):
 		if not rows:
 			messages.info(self, tr("app_title"), tr("nothing_to_export"))
 			return
+		gaps = self._gaps()
+		if gaps and not messages.ask(self, tr("export"), tr("confirm_export_gaps", **gaps)):
+			return
 		fmt = self.fmt()
 		layout = self.layout_choice.currentData()
 		folder = Path(self.store.get("export_folder") or Path.home())
@@ -445,9 +473,13 @@ class AttendanceTab(QWidget):
 				return
 		try:
 			count = export.write(path, rows, fmt, layout, self.store.get("header_language", "en"))
-		except PermissionError:
+		except export.FileInUseError:
 			log.exception("Export to %s failed", path)
 			messages.warn(self, tr("error"), tr("export_in_use", path=path))
+			return
+		except PermissionError as e:  # a read-only folder, or Controlled Folder Access: not Excel
+			log.exception("Export to %s failed", path)
+			messages.warn(self, tr("error"), tr("export_denied", error=e.strerror or e))
 			return
 		except OSError as e:
 			log.exception("Export to %s failed", path)

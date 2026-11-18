@@ -4,7 +4,7 @@ import os
 import sqlite3
 from contextlib import closing, suppress
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .device import DEFAULT_PORT, Punch
@@ -45,6 +45,13 @@ CREATE TABLE IF NOT EXISTS device_serials (
 	PRIMARY KEY (device_id, serial)
 );
 INSERT OR IGNORE INTO device_serials (device_id, serial) SELECT id, serial FROM devices WHERE serial != '';
+-- The days each pull covered (both included). A day no pull covered shows no punches, which looks
+-- the same as everyone being absent, so the app warns about such days.
+CREATE TABLE IF NOT EXISTS pulled_ranges (
+	device_id INTEGER NOT NULL,
+	first_day TEXT NOT NULL,
+	last_day TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL
@@ -76,9 +83,15 @@ def is_damaged(e: sqlite3.DatabaseError) -> bool:
 
 
 def check_file(path: Path) -> bool:
-	"""True if the database file at path opens read-only and passes a quick check."""
+	"""True if the database file at path opens and passes a quick check, without writing to it.
+
+	A plain path, not a file: URI: on a mapped drive or a \\\\server\\share folder the URI names a server,
+	which SQLite refuses."""
+	if not Path(path).is_file():  # connect would create an empty database
+		return False
 	try:
-		with closing(sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)) as db:
+		with closing(sqlite3.connect(path)) as db:
+			db.execute("PRAGMA query_only = ON")
 			return db.execute("PRAGMA quick_check").fetchone()[0] == "ok"
 	except sqlite3.Error:
 		return False
@@ -128,10 +141,29 @@ class Store:
 		try:
 			self.db.row_factory = sqlite3.Row
 			self.check()
+			new_ranges = not self._has_table("pulled_ranges")
 			self.db.executescript(SCHEMA)
+			if new_ranges:
+				self._assume_pulled_so_far()
 		except sqlite3.DatabaseError:
 			self.db.close()  # so the damaged file can be moved aside (Windows locks open files)
 			raise
+
+	def _has_table(self, name) -> bool:
+		sql = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
+		return self.db.execute(sql, (name,)).fetchone() is not None
+
+	def _assume_pulled_so_far(self):
+		"""Versions before 0.4.1 did not record which days a pull covered. Take each device as pulled
+		from its first stored punch to its last pull, as those versions showed it, rather than warn
+		about every day pulled before the upgrade."""
+		with self.db:
+			self.db.execute(
+				"INSERT INTO pulled_ranges (device_id, first_day, last_day) "
+				"SELECT d.id, min(substr(p.ts, 1, 10)), substr(d.last_pull, 1, 10) "
+				f"FROM devices d JOIN ({KNOWN_SERIALS}) s ON s.device_id = d.id "
+				"JOIN punches p ON p.serial = s.serial WHERE d.last_pull != '' GROUP BY d.id"
+			)
 
 	def check(self):
 		result = self.db.execute("PRAGMA quick_check").fetchone()[0]
@@ -227,9 +259,11 @@ class Store:
 		with self.db:
 			self.db.execute("DELETE FROM devices WHERE id = ?", (device_id,))
 			self.db.execute("DELETE FROM device_serials WHERE device_id = ?", (device_id,))
+			self.db.execute("DELETE FROM pulled_ranges WHERE device_id = ?", (device_id,))
 
-	def mark_pulled(self, device_id, serial, when: datetime) -> bool:
-		"""Record a pull; False if the device no longer exists (deleted during the pull)."""
+	def mark_pulled(self, device_id, serial, when: datetime, period: tuple[date, date] | None = None) -> bool:
+		"""Record a pull of the days in period; False if the device no longer exists (deleted during
+		the pull)."""
 		with self.db:
 			updated = self.db.execute(
 				"UPDATE devices SET serial = ?, last_pull = ? WHERE id = ?",
@@ -237,7 +271,33 @@ class Store:
 			).rowcount
 			if updated:
 				self._remember_serial(device_id, serial)
+				if period is not None:
+					start, end = (d.strftime(DATE_FORMAT) for d in period)
+					self.db.execute(
+						"INSERT INTO pulled_ranges (device_id, first_day, last_day) VALUES (?, ?, ?)",
+						(device_id, start, end),
+					)
 		return bool(updated)
+
+	def days_not_pulled(self, device_ids, start: date, end: date, today: date) -> dict[int, list[date]]:
+		"""Device ID -> the days from start to end, up to today, that no pull of it covered."""
+		end = min(end, today)
+		if start > end:
+			return {}
+		days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+		missing = {}
+		for device_id in device_ids:
+			ranges = self.db.execute(
+				"SELECT first_day, last_day FROM pulled_ranges WHERE device_id = ? AND first_day <= ? AND last_day >= ?",
+				(device_id, end.strftime(DATE_FORMAT), start.strftime(DATE_FORMAT)),
+			).fetchall()
+			covered = [
+				(date.fromisoformat(r["first_day"]), date.fromisoformat(r["last_day"])) for r in ranges
+			]
+			gaps = [day for day in days if not any(a <= day <= b for a, b in covered)]
+			if gaps:
+				missing[device_id] = gaps
+		return missing
 
 	# People
 

@@ -99,6 +99,7 @@ class App:
 		self.window = None
 		self.translator = None
 		self.checking = False
+		self.updating = ""  # the version being downloaded, from Install until it runs or fails
 
 	def apply_language(self, code):
 		i18n.set_language(code)
@@ -156,6 +157,11 @@ class App:
 
 	def check_for_updates(self, silent=False):
 		"""silent: the startup check, which only speaks up when there is a new version."""
+		if self.updating:
+			# A second check would start a second download, or delete this one's installer.
+			if not silent:
+				messages.info(self.window, tr("updates"), tr("update_downloading", version=self.updating))
+			return
 		if self.checking:
 			return
 		self.checking = True
@@ -200,21 +206,27 @@ class App:
 		if worker.busy():
 			messages.info(self.window, tr("app_title"), tr("busy"))
 			return
+		self.updating = release.version
 		self.window.statusBar().showMessage(tr("update_downloading", version=release.version))
 		run_in_background(
 			updater.download_setup,
 			release,
 			on_done=self._downloaded,
-			on_failed=lambda message: self._check_failed(message, silent=False),
+			on_failed=self._download_failed,
 			device=False,
 		)
 
+	def _download_failed(self, message):
+		self.updating = ""
+		self._check_failed(message, silent=False)
+
 	def _downloaded(self, path):
-		if worker.busy():  # a pull started during the download; let it finish
-			messages.info(self.window, tr("app_title"), tr("busy"))
+		if worker.busy():
+			# A pull started during the download: install when it is done, without downloading again.
+			QTimer.singleShot(2000, lambda: self._downloaded(path))
 			return
 		log.info("Running installer %s", path)
-		updater.run_installer(path)
+		updater.run_installer(path, self.data_dir / "update.log")
 		self.qt_app.quit()
 
 
@@ -334,7 +346,39 @@ def setup_logging(data_dir: Path):
 	sys.excepthook = excepthook
 
 
+def smoke_test() -> int:
+	"""For CI: start the built app far enough to load every library it needs, then quit with 0.
+
+	A Qt or Python file left out of the build fails here instead of on HR's PC. Uses a temporary
+	data folder and no screen."""
+	import ssl
+	import tempfile
+
+	from openpyxl import Workbook
+
+	os.environ["QT_QPA_PLATFORM"] = "offscreen"
+	qt_app = QApplication(sys.argv)
+	qt_app.setWindowIcon(QIcon(str(ICON)))
+	if qt_app.windowIcon().isNull():
+		return 2
+	ssl.create_default_context()  # the updater's HTTPS
+	Workbook()
+	with tempfile.TemporaryDirectory() as folder:
+		data_dir = Path(folder)
+		store = Store(data_dir / "zk_pull.db")
+		app = App(qt_app, store, data_dir)
+		app.apply_language("ar")
+		app.show_main()
+		qt_app.processEvents()
+		app.window.close()
+		store.backup(data_dir / "backup.db")
+		store.close()
+	return 0
+
+
 def main():
+	if "--smoke-test" in sys.argv:
+		return smoke_test()
 	qt_app = QApplication(sys.argv)
 	qt_app.setApplicationName("ZK Pull")
 	qt_app.setOrganizationName("")

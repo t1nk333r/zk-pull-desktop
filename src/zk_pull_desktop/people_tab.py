@@ -1,6 +1,8 @@
+import codecs
 import csv
 import io
 import logging
+import re
 import zipfile
 from itertools import islice
 from pathlib import Path
@@ -8,6 +10,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+	QApplication,
 	QFileDialog,
 	QHBoxLayout,
 	QHeaderView,
@@ -32,13 +35,30 @@ log = logging.getLogger(__name__)
 HEADER_WORDS = ("id", "no", "code", "emp", "رقم", "كود", "الرقم", "الموظف")
 
 
+def _line_of(data: bytes, offset: int) -> int:
+	return data.count(b"\n", 0, offset) + 1
+
+
 def _csv_text(path: Path) -> str:
-	"""UTF-8 first; Excel's "CSV (Comma delimited)" on Arabic Windows saves Windows-1256."""
+	"""UTF-8 first; Excel's "CSV (Comma delimited)" on Arabic Windows saves Windows-1256.
+
+	Windows-1256 only when the file is not UTF-8 at all: one bad byte in a UTF-8 file must not turn
+	every name into mojibake, which the import would then save over the good names."""
 	data = path.read_bytes()
-	try:
-		return data.decode("utf-8-sig")
-	except UnicodeDecodeError:
-		return data.decode("cp1256")
+	if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):  # Excel's "Unicode Text"
+		text = data.decode("utf-16")
+	else:
+		try:
+			text = data.decode("utf-8-sig")
+		except UnicodeDecodeError as e:
+			loose = data.decode("utf-8", errors="replace")
+			bad = loose.count("�")
+			if data.startswith(codecs.BOM_UTF8) or sum(ord(c) > 127 for c in loose) - bad > bad:
+				raise NamesFileError(tr("bad_encoding", line=_line_of(data, e.start))) from e
+			text = data.decode("cp1256")
+	if "\x00" in text:  # UTF-16 without a byte order mark, or not a text file
+		raise NamesFileError(tr("no_names_found"))
+	return text
 
 
 def _is_header(first, rest) -> bool:
@@ -51,15 +71,44 @@ def _is_header(first, rest) -> bool:
 	return any(word in cell for word in HEADER_WORDS) or any(r and r[0].isdigit() for r in rest)
 
 
+def _delimiter(text: str) -> str:
+	"""The separator that splits the first lines into the same number of columns, two or more, with no
+	stray quotes. A separator inside a quoted name ("Al-Ahmad, Mohammed") is not counted, and on a tie
+	";" and tab win over ",", which names contain more often."""
+	lines = [line for line in text.splitlines() if line.strip()][:20]
+
+	def score(delimiter):
+		rows = list(csv.reader(lines, delimiter=delimiter))
+		widths = [len(r) for r in rows if len(r) >= 2]
+		if not widths:
+			return (0, 0)
+		common = max(set(widths), key=widths.count)
+		stray_quotes = sum('"' in cell for r in rows for cell in r)
+		return (widths.count(common), -stray_quotes)
+
+	return max(";\t,", key=score)  # max keeps the first of equal scores
+
+
 def _csv_rows(text: str):
 	"""Rows of a CSV with comma, semicolon or tab between columns (Excel uses ";" in many regions).
 
-	The separator is the one used most in the first line; csv.Sniffer is not used because its result
-	differs between Python patch releases (3.12.10, which the Windows build bundles, gives up on
-	files that later releases read)."""
-	first = next((line for line in text.splitlines() if line.strip()), "")
-	delimiter = max(",;\t", key=first.count) if any(d in first for d in ",;\t") else ","
-	return csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
+	csv.Sniffer is not used because its result differs between Python patch releases (3.12.10, which
+	the Windows build bundles, gives up on files that later releases read)."""
+	return csv.reader(io.StringIO(text, newline=""), delimiter=_delimiter(text))
+
+
+def _xlsx_id(cell) -> str:
+	"""An ID cell as text. Excel keeps "0012" typed into a cell formatted "0000" as the number 12."""
+	value = cell.value
+	if value is None:
+		return ""
+	if isinstance(value, float) and value.is_integer():
+		value = int(value)
+	if isinstance(value, int):
+		number_format = getattr(cell, "number_format", "") or ""
+		width = len(number_format) if re.fullmatch(r"0+", number_format) else 0
+		return str(value).zfill(width)
+	return str(value)
 
 
 MAX_FILE = 20 * 1024 * 1024  # a names list is a few KB; anything this big is not one
@@ -86,8 +135,9 @@ def read_names_file(path: Path) -> dict[str, str]:
 	if path.suffix.lower() == ".xlsx":
 		wb = load_workbook(path, read_only=True, data_only=True)
 		rows = [
-			[("" if v is None else str(v)) for v in row[:2]]
-			for row in islice(wb.active.iter_rows(values_only=True, max_col=2), MAX_ROWS)
+			[_xlsx_id(row[0]), *("" if c.value is None else str(c.value) for c in row[1:2])]
+			for row in islice(wb.active.iter_rows(max_col=2), MAX_ROWS)
+			if row
 		]
 		wb.close()
 	else:
@@ -156,7 +206,14 @@ class PeopleTab(QWidget):
 		self.table.itemChanged.connect(self._edited)
 		self.search.textChanged.connect(self._filter)
 
+	def _commit_edit(self):
+		"""Save a name being typed: rebuilding the rows would close its editor without saving it."""
+		editor = QApplication.focusWidget()
+		if editor is not None and self.table.isAncestorOf(editor):
+			editor.clearFocus()  # the delegate commits on focus out, and _edited saves it
+
 	def reload(self):
+		self._commit_edit()
 		self.table.blockSignals(True)
 		self.table.setRowCount(0)
 		for p in self.store.people():
@@ -243,11 +300,12 @@ class PeopleTab(QWidget):
 			return
 		d = devices[0]
 		if len(devices) > 1:
-			names = [x.name for x in devices]
-			name, ok = QInputDialog.getItem(self, tr("import_device"), tr("choose_device"), names, 0, False)
+			# With the address, so two devices with the same name can be told apart.
+			labels = [f"{x.name} ({x.ip})" for x in devices]
+			label, ok = QInputDialog.getItem(self, tr("import_device"), tr("choose_device"), labels, 0, False)
 			if not ok:
 				return
-			d = devices[names.index(name)]
+			d = devices[labels.index(label)]
 		self.buttons["import_device"].setEnabled(False)
 		self.status(tr("pulling", device=d.name))
 		run_in_background(

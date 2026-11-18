@@ -5,13 +5,15 @@ time cells, so sorting and filtering work in Excel.
 """
 
 import csv
+import os
 from collections import defaultdict
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.cell.cell import ERROR_CODES, ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
@@ -105,10 +107,21 @@ def _clean(value):
 
 
 def _safe_csv_text(value):
-	# Names are typed by people; Excel must not run one that looks like a formula when opening the CSV.
-	if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+	# Names are typed by people; Excel must not run one that looks like a formula when opening the CSV,
+	# or turn "#N/A" into an error cell that breaks SUM and VLOOKUP over the column.
+	if isinstance(value, str) and (
+		value[:1] in ("=", "+", "-", "@", "\t", "\r") or value.strip().upper() in ERROR_CODES
+	):
 		return "'" + value
 	return value
+
+
+def _csv_id(value):
+	"""Excel reads a bare 0012 as the number 12, and keeps only 15 digits of a longer one."""
+	digits = isinstance(value, str) and value.isascii() and value.isdigit()
+	if digits and (len(value) > 15 or (len(value) > 1 and value.startswith("0"))):
+		return f'="{value}"'
+	return _csv_value(value)
 
 
 def _csv_value(value):
@@ -123,16 +136,33 @@ def _csv_value(value):
 	return _safe_csv_text(_clean(value))
 
 
+class FileInUseError(PermissionError):
+	"""The finished file could not take the place of the existing one: it is open in another program."""
+
+
 def write(path: Path, punches: list[PunchRow], fmt="xlsx", layout="log", lang="en") -> int:
-	"""Write the file and return the number of data rows."""
+	"""Write the file and return the number of data rows.
+
+	Written next to it under a temporary name first, so a failure part-way (a network share that
+	drops, a full disk) leaves an existing file as it was instead of half-written."""
+	path = Path(path)
 	headers, rows = _table(punches, layout, lang)
-	if fmt == "csv":
-		with open(path, "w", newline="", encoding="utf-8-sig") as f:
-			writer = csv.writer(f)
-			writer.writerow(headers)
-			writer.writerows([_csv_value(v) for v in row] for row in rows)
-	else:
-		_write_xlsx(path, headers, rows, layout, lang)
+	temp = path.with_name(path.name + ".tmp")
+	try:
+		if fmt == "csv":
+			with open(temp, "w", newline="", encoding="utf-8-sig") as f:
+				writer = csv.writer(f)
+				writer.writerow(headers)
+				writer.writerows([_csv_id(row[0]), *(_csv_value(v) for v in row[1:])] for row in rows)
+		else:
+			_write_xlsx(temp, headers, rows, layout, lang)
+		try:
+			os.replace(temp, path)
+		except PermissionError as e:
+			raise FileInUseError(*e.args) from e
+	finally:
+		with suppress(OSError):
+			temp.unlink(missing_ok=True)
 	return len(rows)
 
 

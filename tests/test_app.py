@@ -65,3 +65,34 @@ def test_daily_backup_keeps_seven_good_copies(tmp_path):
 	kept = sorted(p.name for p in backups.iterdir())
 	assert len(kept) == app.BACKUPS_KEPT and kept[-1].startswith("zk_pull_20")
 	store.close()
+
+
+def test_device_addresses_are_checked_and_normalized():
+	from zk_pull_desktop.dialogs import normalize_ip
+
+	assert normalize_ip(" 192.168.100.056 ") == "192.168.100.56"  # Windows would read 056 as octal
+	assert normalize_ip("١٩٢.١٦٨.١.٢٠١") == "192.168.1.201"
+	assert normalize_ip("10.0.0.5") == "10.0.0.5"
+	for bad in ("8.8.8.8", "device.local", "192.168.1", "192.168.1.300", "0.0.0.0", "224.0.0.1", ""):
+		assert normalize_ip(bad) is None, bad
+
+
+def test_background_callbacks_of_a_window_are_found_through_partial():
+	from functools import partial
+
+	from PySide6.QtCore import QObject
+
+	from zk_pull_desktop import worker
+
+	class Owner(QObject):
+		def done(self, device, result):
+			pass
+
+	owner = Owner()
+	assert worker._owner(partial(owner.done, "Gate")) is owner
+	assert worker._owner(owner.done) is owner
+	assert worker._owner(lambda result: None) is None
+
+
+def test_smoke_test_starts_the_app_and_quits():
+	assert app.smoke_test() == 0

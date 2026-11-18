@@ -153,3 +153,37 @@ def test_backup_is_checked_before_it_takes_its_name(store, tmp_path, monkeypatch
 	with pytest.raises(store_module.DamagedError):
 		store.backup(bad)
 	assert sorted(p.name for p in tmp_path.iterdir()) == ["good.db", "test.db"]
+
+
+def test_days_never_pulled_are_reported(store):
+	gate = store.save_device(Device(None, "Gate", "10.0.0.5"))
+	store.mark_pulled(gate, "SN1", datetime(2026, 11, 10, 9), (date(2026, 11, 1), date(2026, 11, 3)))
+	store.mark_pulled(gate, "SN1", datetime(2026, 11, 10, 9), (date(2026, 11, 5), date(2026, 11, 10)))
+	missing = store.days_not_pulled([gate], date(2026, 10, 30), date(2026, 11, 30), date(2026, 11, 10))
+	# Days after today are not counted: there can be no punches for them yet.
+	assert missing == {gate: [date(2026, 10, 30), date(2026, 10, 31), date(2026, 11, 4)]}
+	assert store.days_not_pulled([gate], date(2026, 11, 5), date(2026, 11, 9), date(2026, 11, 10)) == {}
+
+
+def test_upgrade_takes_earlier_pulls_as_covering_until_the_last_pull(tmp_path):
+	import sqlite3
+
+	path = tmp_path / "old.db"
+	s = Store(path)
+	gate = s.save_device(Device(None, "Gate", "10.0.0.5"))
+	s.add_punches([punch("1", "2026-10-20 08:00:00")])
+	s.mark_pulled(gate, "SN1", datetime(2026, 11, 10, 9))
+	s.close()
+	with sqlite3.connect(path) as db:  # as a database from 0.4.0 has it
+		db.execute("DROP TABLE pulled_ranges")
+	s = Store(path)
+	assert s.days_not_pulled([gate], date(2026, 10, 20), date(2026, 11, 10), date(2026, 11, 10)) == {}
+	assert gate in s.days_not_pulled([gate], date(2026, 10, 1), date(2026, 11, 10), date(2026, 11, 10))
+	s.close()
+
+
+def test_check_file_does_not_create_a_missing_file(tmp_path):
+	from zk_pull_desktop import store as store_module
+
+	assert not store_module.check_file(tmp_path / "missing.db")
+	assert not (tmp_path / "missing.db").exists()

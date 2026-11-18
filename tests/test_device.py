@@ -313,3 +313,10 @@ def test_device_errors_are_translated(monkeypatch):
 		== i18n.TEXTS["err_unreachable"][1]
 	)
 	assert error_message(device.Cancelled()) == i18n.TEXTS["cancelled"][1]
+
+
+def test_old_8_byte_records_of_a_deleted_user_are_kept_apart():
+	# uid 7 has no user any more; "7" is another employee's ID, who must not get these punches.
+	data = table([pack("<HBIB", 7, 1, zk_time(datetime(2026, 11, 1, 8)), 0)], 8)
+	punches, _, _ = device.parse_attendance(data, 1, {3: "7"}, "SN1", NOW)
+	assert punches[0].user_id == "uid:7"

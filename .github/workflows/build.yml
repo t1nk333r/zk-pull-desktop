@@ -51,6 +51,35 @@ jobs:
       - name: Build app
         run: uv run pyinstaller --noconfirm --windowed --name "ZK Pull" --icon packaging/icon.ico --add-data "src/zk_pull_desktop/assets:zk_pull_desktop/assets" packaging/zk_pull.py
 
+      - name: Leave out unused Qt parts
+        # PyInstaller collects Qt's networking, TLS (with a second OpenSSL), SVG, software OpenGL and
+        # image plugins the app never uses; each would add a third-party licence to ship. Python's own
+        # OpenSSL (libssl-3.dll, libcrypto-3.dll) stays: the updater needs it.
+        shell: pwsh
+        run: |
+          $internal = "dist\ZK Pull\_internal"
+          $qt = "$internal\PySide6"
+          $unused = @(
+            "$internal\libssl-3-x64.dll", "$internal\libcrypto-3-x64.dll",
+            "$qt\QtNetwork.pyd", "$qt\Qt6Network.dll", "$qt\Qt6Svg.dll", "$qt\opengl32sw.dll",
+            "$qt\plugins\tls", "$qt\plugins\networkinformation", "$qt\plugins\iconengines",
+            "$qt\plugins\imageformats\qjpeg.dll", "$qt\plugins\imageformats\qtiff.dll",
+            "$qt\plugins\imageformats\qwebp.dll", "$qt\plugins\imageformats\qsvg.dll",
+            "$qt\plugins\imageformats\qicns.dll", "$qt\plugins\imageformats\qtga.dll",
+            "$qt\plugins\imageformats\qwbmp.dll"
+          )
+          foreach ($path in $unused) {
+            if (Test-Path $path) { Remove-Item -Recurse -Force $path } else { Write-Host "not built: $path" }
+          }
+
+      - name: Smoke test the built app
+        # Starts the real exe offscreen with a temporary data folder; a missing file fails the build.
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\ZK Pull\ZK Pull.exe" -ArgumentList "--smoke-test" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "the app did not quit (an error dialog?)" }
+          if ($p.ExitCode -ne 0) { throw "the app exited with $($p.ExitCode)" }
+
       - name: Licences next to the app
         # LICENSE, the notices for bundled components and their licence texts; the installer and
         # the portable zip both take the whole folder.

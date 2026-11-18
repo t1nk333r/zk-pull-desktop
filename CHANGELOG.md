@@ -2,6 +2,46 @@
 
 Each version's section becomes the description of its GitHub release.
 
+## 0.4.1 (2026-11-18)
+
+Installed from 0.2.0 or later, the app offers this update by itself.
+
+**New**
+- **Days never pulled are pointed out.** ZK Pull now remembers which days each pull covered. The Attendance tab says when days in the chosen period were never pulled from a device, and Export asks before writing a file where those days would look like absences. Pulls made before this version count as covering everything up to their date.
+
+**Fixed**
+- Names files: one bad character in a UTF-8 file no longer turns every Arabic name into garbled text and saves it over the good names; the import now stops and names the line. Files saved as "Unicode Text" import; a comma inside a quoted name no longer picks the wrong separator; IDs such as 0012 in Excel cells formatted 0000 keep their zeros.
+- Updates: an update stopped part-way (a locked file, a full disk) no longer leaves an app that cannot start; checking for updates during a download no longer breaks it; a download that finishes during a pull installs after the pull instead of being thrown away; errors now say whether GitHub refused the file or the disk is full; the installer writes update.log in the data folder.
+- Old devices with 8-byte records: punches of a deleted user are no longer added to the employee who has the same number; they show as "uid:7".
+- CSV: IDs such as 0012 and IDs longer than 15 digits stay as typed in Excel, and names such as #N/A stay text.
+- Export: replacing a file is safe if the save fails part-way; a folder Windows does not allow writing to is no longer reported as "the file is open in Excel".
+- Back up to a mapped drive or network folder now works.
+- A name being typed is no longer lost when an import finishes, and changing the language during a names-file import no longer loses the import.
+- Two devices with the same name can be told apart in **Import names from device**.
+- A device IP with leading zeros (192.168.100.056) no longer connects to a different device; addresses outside the office network are refused.
+- The app no longer ships Qt networking, SVG, software OpenGL and image plugins it does not use; the licences of the remaining components (OpenSSL, bzip2, SQLite and others) are listed. Each build is now started once in CI before it is published.
+
+<div dir="rtl">
+
+إذا كان الإصدار 0.2.0 أو أحدث مثبّتًا فسيعرض البرنامج هذا التحديث تلقائيًا.
+
+**الجديد**
+- **التنبيه إلى الأيام التي لم تُسحب.** أصبح ZK Pull يتذكر الأيام التي غطّاها كل سحب. ويبيّن تبويب الحضور الأيام التي لم تُسحب من جهاز ما في الفترة المختارة، ويسأل التصدير قبل كتابة ملف ستظهر فيه تلك الأيام كأنها غياب. والسحوبات التي جرت قبل هذا الإصدار تُعدّ مغطية لكل الأيام حتى تاريخها.
+
+**الإصلاحات**
+- ملفات الأسماء: حرف واحد غير صالح في ملف UTF-8 لم يعد يحوّل كل الأسماء العربية إلى رموز مشوّهة ويحفظها مكان الأسماء الصحيحة؛ يتوقف الاستيراد الآن ويذكر رقم السطر. والملفات المحفوظة بصيغة "Unicode Text" تُستورد، والفاصلة داخل اسم بين علامتي اقتباس لم تعد تختار فاصلًا خاطئًا، والأرقام مثل 0012 في خلايا Excel المنسقة 0000 تحتفظ بأصفارها.
+- التحديثات: التحديث الذي يتوقف في منتصفه (ملف مقفل أو قرص ممتلئ) لم يعد يترك برنامجًا لا يعمل، والتحقق من التحديثات أثناء التنزيل لم يعد يفسده، والتنزيل الذي ينتهي أثناء السحب يُثبَّت بعد السحب بدلًا من إهماله، والأخطاء تبيّن الآن هل رفض GitHub الملف أم أن القرص ممتلئ، ويكتب المثبّت الملف update.log في مجلد البيانات.
+- الأجهزة القديمة ذات السجلات بطول 8 بايت: بصمات المستخدم المحذوف لم تعد تُضاف إلى الموظف الذي يحمل الرقم نفسه، وتظهر باسم "uid:7".
+- CSV: الأرقام مثل 0012 والأرقام الأطول من 15 خانة تبقى كما كُتبت في Excel، والأسماء مثل ‎#N/A تبقى نصًا.
+- التصدير: استبدال ملف موجود أصبح آمنًا إذا فشل الحفظ في منتصفه، والمجلد الذي لا يسمح Windows بالكتابة فيه لم يعد يُبلَّغ عنه بأن "الملف مفتوح في Excel".
+- النسخ الاحتياطي إلى محرك أقراص شبكي أو مجلد على الشبكة يعمل الآن.
+- الاسم الذي تكتبه لم يعد يضيع عند انتهاء الاستيراد، وتغيير اللغة أثناء استيراد ملف الأسماء لم يعد يُضيّع الاستيراد.
+- يمكن التمييز بين جهازين بالاسم نفسه في **استيراد الأسماء من الجهاز**.
+- عنوان IP بأصفار في البداية (192.168.100.056) لم يعد يتصل بجهاز آخر، وتُرفض العناوين من خارج شبكة المكتب.
+- لم يعد البرنامج يضم أجزاء Qt للشبكة وSVG وOpenGL البرمجي وإضافات الصور التي لا يستخدمها، وأُدرجت تراخيص المكونات الباقية (OpenSSL وbzip2 وSQLite وغيرها). ويُشغَّل كل إصدار مرة في CI قبل نشره.
+
+</div>
+
 ## 0.4.0 (2026-11-16)
 
 Installed from 0.2.0 or 0.3.0, the app offers this update by itself.

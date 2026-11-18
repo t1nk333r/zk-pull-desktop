@@ -8,6 +8,11 @@ own licence; the full texts are in the `licenses` folder. Their licences, not ZK
 |---|---|---|---|
 | Qt 6 (QtCore, QtGui, QtWidgets) and PySide6 / Shiboken6 | 6.12 | LGPL-3.0 | `licenses/LGPL-3.0.txt`, `licenses/GPL-3.0.txt` |
 | Python | 3.12 | PSF License | `licenses/Python.txt` |
+| OpenSSL (`libssl-3.dll`, `libcrypto-3.dll`, used by Python for HTTPS) | 3 | Apache-2.0 | `licenses/Python.txt`, section C |
+| expat, libmpdec and zlib (built into Python) | | MIT, BSD-2-Clause, zlib | `licenses/Python.txt`, section C |
+| bzip2 (`_bz2.pyd`) | 1.0.8 | bzip2 licence (BSD-style) | `licenses/bzip2.txt` |
+| SQLite (`sqlite3.dll`) and liblzma (`_lzma.pyd`) | | Public domain | |
+| Microsoft Visual C++ and Universal C runtime (`VCRUNTIME140*.dll`, `MSVCP140*.dll`, `ucrtbase.dll`, `api-ms-win-*.dll`) | | Redistributable under the Visual Studio licence terms | |
 | openpyxl | 3.1 | MIT | `licenses/openpyxl.txt` |
 | et-xmlfile | 2.0 | MIT | `licenses/et_xmlfile.txt` |
 | defusedxml | 0.7 | PSF License 2.0 | `licenses/defusedxml.txt` |

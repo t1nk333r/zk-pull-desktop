@@ -26,7 +26,7 @@ from . import __version__, messages
 from .dialogs import DeviceDialog
 from .i18n import LANGUAGES, is_rtl, isolate, language, tr
 from .store import Store
-from .worker import busy
+from .worker import busy, window_busy
 
 
 class SettingsTab(QWidget):
@@ -201,8 +201,8 @@ class SettingsTab(QWidget):
 
 	def _language_changed(self):
 		code = self.language.currentData()
-		if busy():
-			# The window is rebuilt in the new language; a running pull would lose its window.
+		if window_busy():
+			# The window is rebuilt in the new language; a running pull or import would lose its window.
 			self.language.blockSignals(True)
 			self.language.setCurrentIndex(self.language.findData(language()))
 			self.language.blockSignals(False)

@@ -401,7 +401,9 @@ def parse_attendance(
 		records += 1
 		if size == 8:
 			uid, verify, raw_time, punch = unpack_from("<HBIB", data, offset)
-			user_id = uid_to_user_id.get(uid, str(uid))
+			# A uid with no user is a deleted user's slot. Its bare number would be some other
+			# employee's ID, so it is kept apart under "uid:".
+			user_id = uid_to_user_id.get(uid, f"uid:{uid}")
 		elif size == 16:
 			number, raw_time, verify, punch = unpack_from("<IIBB", data, offset)
 			user_id = str(number)
