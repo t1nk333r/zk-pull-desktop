@@ -2,6 +2,24 @@
 
 Each version's section becomes the description of its GitHub release.
 
+## 0.5.0 (2026-11-18)
+
+Installed from 0.2.0 or later, the app offers this update by itself.
+
+**New**
+- **Time card export:** a third export layout laid out like the ZKTeco software's Time Card, with the same columns (Name, Date, Timetable, On duty, Off duty, Clock In, Clock Out, Late, Early, Absent, OT Time, Work Time, ATT_Time) and the same rules: late and early after the grace period, overtime from 60 minutes after off duty, absent working days marked, the weekend left out. Checked against a real card exported by the ZKTeco software. The shift, grace periods, overtime threshold and weekend are under **Settings → Time card**; the defaults are those of that card (Daytime 08:00–17:00, 15 minutes grace, Friday off).
+- **One employee at a time:** the Attendance tab has an **Employee** list next to the device. Choose someone to see, pull and export only their punches, in any layout; the file name gets their ID (for example `timecard_12_2026-11-01_to_2026-11-30.xlsx`), and a one-person time card's sheet is named after them. The list holds everyone in People and every ID seen in a pull. A pull still saves everyone's punches, as the device always sends its whole log.
+
+<div dir="rtl">
+
+إذا كان الإصدار 0.2.0 أو أحدث مثبّتًا فسيعرض البرنامج هذا التحديث تلقائيًا.
+
+**الجديد**
+- **تصدير بطاقة الدوام:** شكل تصدير ثالث مثل بطاقة الدوام في برنامج ZKTeco، بالأعمدة نفسها (الاسم، التاريخ، الدوام، بداية الدوام، نهاية الدوام، الحضور، الانصراف، التأخير، الخروج المبكر، غائب، العمل الإضافي، وقت العمل، وقت الحضور) وبالقواعد نفسها: التأخير والخروج المبكر بعد دقائق السماح، والعمل الإضافي من 60 دقيقة بعد نهاية الدوام، وتمييز أيام العمل التي غاب فيها الموظف، واستبعاد عطلة نهاية الأسبوع. وقد طوبق مع بطاقة حقيقية صدّرها برنامج ZKTeco. والدوام ودقائق السماح وحد العمل الإضافي وعطلة نهاية الأسبوع في **الإعدادات ← بطاقة الدوام**، وقيمها الافتراضية هي قيم تلك البطاقة (Daytime من 08:00 إلى 17:00، و15 دقيقة سماح، والجمعة عطلة).
+- **موظف واحد في كل مرة:** في تبويب الحضور قائمة **الموظف** بجانب الجهاز. اختر موظفًا لعرض بصماته وسحبها وتصديرها وحده، بأي شكل، ويُضاف رقمه إلى اسم الملف (مثل `timecard_12_2026-11-01_to_2026-11-30.xlsx`)، وتحمل ورقة بطاقة الموظف الواحد اسمه. تضم القائمة كل من في تبويب الموظفين وكل رقم ظهر في سحب. ويحفظ السحب بصمات الجميع مع ذلك، لأن الجهاز يرسل سجله كاملًا دائمًا.
+
+</div>
+
 ## 0.4.1 (2026-11-18)
 
 Installed from 0.2.0 or later, the app offers this update by itself.

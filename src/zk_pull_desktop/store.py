@@ -338,6 +338,15 @@ class Store:
 				changed += self.db.execute(sql, (user_id, name)).rowcount
 		return changed
 
+	def employees(self) -> list[Person]:
+		"""Everyone with a name or with punches, by ID: the choices for showing one employee."""
+		rows = self.db.execute(
+			"SELECT u.user_id, coalesce(n.name, '') AS name, coalesce(n.department, '') AS department "
+			"FROM (SELECT user_id FROM people UNION SELECT user_id FROM punches) u "
+			"LEFT JOIN people n ON n.user_id = u.user_id ORDER BY length(u.user_id), u.user_id"
+		)
+		return [Person(**dict(r)) for r in rows]
+
 	def unnamed_user_ids(self) -> list[str]:
 		"""User IDs that have punches but no name yet."""
 		rows = self.db.execute(

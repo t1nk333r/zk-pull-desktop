@@ -187,3 +187,10 @@ def test_check_file_does_not_create_a_missing_file(tmp_path):
 
 	assert not store_module.check_file(tmp_path / "missing.db")
 	assert not (tmp_path / "missing.db").exists()
+
+
+def test_employees_are_people_and_ids_seen_in_punches(store):
+	store.save_person(Person("12", "Sara", "HR"))
+	store.save_person(Person("3", ""))
+	store.add_punches([punch("7", "2026-11-01 08:00:00"), punch("12", "2026-11-01 08:00:00")])
+	assert [(p.user_id, p.name) for p in store.employees()] == [("3", ""), ("7", ""), ("12", "Sara")]

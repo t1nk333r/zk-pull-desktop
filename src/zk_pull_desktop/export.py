@@ -1,4 +1,4 @@
-"""Write punches to CSV or XLSX, as a punch log or a daily summary.
+"""Write punches to CSV or XLSX, as a punch log, a daily summary or a time card.
 
 CSV is UTF-8 with a byte order mark so Excel shows Arabic names correctly. XLSX gets real date and
 time cells, so sorting and filtering work in Excel.
@@ -6,6 +6,7 @@ time cells, so sorting and filtering work in Excel.
 
 import csv
 import os
+import re
 from collections import defaultdict
 from contextlib import suppress
 from dataclasses import dataclass
@@ -19,8 +20,9 @@ from openpyxl.utils import get_column_letter
 
 from .i18n import punch_label, tr, verify_label
 from .store import PunchRow
+from .timecard import Timetable, card_rows
 
-LAYOUTS = ("log", "daily")
+LAYOUTS = ("log", "daily", "timecard")
 FORMATS = ("xlsx", "csv")
 
 LOG_COLUMNS = (
@@ -43,6 +45,34 @@ DAILY_COLUMNS = (
 	"col_hours",
 	"col_count",
 )
+# As in the ZKTeco software's Time Card export, with its column widths.
+CARD_COLUMNS = (
+	("col_name", 10),
+	("col_date", 17),
+	("col_timetable", 16.4),
+	("col_on_duty", 13.1),
+	("col_off_duty", 13.3),
+	("col_clock_in", 13.7),
+	("col_clock_out", 16.3),
+	("col_late", 9),
+	("col_early", 9),
+	("col_absent", 11.9),
+	("col_ot", 14.4),
+	("col_work", 17.7),
+	("col_att", 17),
+)
+CARD_DATE_FORMAT = "m/d/yyyy"  # 9/17/2026, as on the device software's card
+
+
+@dataclass(frozen=True)
+class CardRequest:
+	"""What a time card needs besides the punches: who is on it, which days, and the shift."""
+
+	people: list[tuple[str, str]]  # (user ID, name)
+	start: date
+	end: date
+	timetable: Timetable
+	today: date
 
 
 @dataclass(frozen=True)
@@ -76,9 +106,19 @@ def daily_rows(punches: list[PunchRow]) -> list[DailyRow]:
 	return rows
 
 
-def _table(punches, layout, lang):
+def _table(punches, layout, lang, card=None):
 	"""(headers, rows) with Python date/time values; text is labelled in lang."""
-	if layout == "daily":
+	if layout == "timecard":
+		headers = [tr(c, lang) for c, _width in CARD_COLUMNS]
+		yes = tr("absent_true", lang)
+		rows = [
+			[
+				r.name, r.day, r.timetable, r.on_duty, r.off_duty, r.clock_in, r.clock_out, r.late,
+				r.early, yes if r.absent else "", r.overtime, r.work, r.attended,
+			]
+			for r in card_rows(punches, card.people, card.start, card.end, card.timetable, card.today)
+		]  # fmt: skip
+	elif layout == "daily":
 		headers = [tr(c, lang) for c in DAILY_COLUMNS]
 		rows = [
 			[r.user_id, r.name, r.department, r.day, r.first, r.last, r.hours, r.count]
@@ -140,22 +180,26 @@ class FileInUseError(PermissionError):
 	"""The finished file could not take the place of the existing one: it is open in another program."""
 
 
-def write(path: Path, punches: list[PunchRow], fmt="xlsx", layout="log", lang="en") -> int:
+def write(
+	path: Path, punches: list[PunchRow], fmt="xlsx", layout="log", lang="en", card: CardRequest | None = None
+) -> int:
 	"""Write the file and return the number of data rows.
 
 	Written next to it under a temporary name first, so a failure part-way (a network share that
 	drops, a full disk) leaves an existing file as it was instead of half-written."""
 	path = Path(path)
-	headers, rows = _table(punches, layout, lang)
+	headers, rows = _table(punches, layout, lang, card)
 	temp = path.with_name(path.name + ".tmp")
 	try:
 		if fmt == "csv":
 			with open(temp, "w", newline="", encoding="utf-8-sig") as f:
 				writer = csv.writer(f)
 				writer.writerow(headers)
+				if layout == "timecard":  # 9/17/2026, as in the XLSX
+					rows = [[r[0], f"{r[1].month}/{r[1].day}/{r[1].year}", *r[2:]] for r in rows]
 				writer.writerows([_csv_id(row[0]), *(_csv_value(v) for v in row[1:])] for row in rows)
 		else:
-			_write_xlsx(temp, headers, rows, layout, lang)
+			_write_xlsx(temp, headers, rows, layout, lang, card)
 		try:
 			os.replace(temp, path)
 		except PermissionError as e:
@@ -166,12 +210,21 @@ def write(path: Path, punches: list[PunchRow], fmt="xlsx", layout="log", lang="e
 	return len(rows)
 
 
-def _write_xlsx(path, headers, rows, layout, lang):
+def _sheet_title(layout, lang, card):
+	"""31 characters at most, none of []:*?/\\. A one-person time card is named after the person."""
+	if layout == "timecard" and card and len(card.people) == 1:
+		user_id, name = card.people[0]
+		title = re.sub(r"[\[\]:*?/\\]", " ", name or user_id).strip()[:31]
+		if title:
+			return title
+	key = {"daily": "layout_daily_short", "timecard": "layout_timecard_short"}.get(layout, "tab_attendance")
+	return tr(key, lang)
+
+
+def _write_xlsx(path, headers, rows, layout, lang, card=None):
 	wb = Workbook()
 	ws = wb.active
-	ws.title = tr(
-		"layout_daily_short" if layout == "daily" else "tab_attendance", lang
-	)  # 31 characters at most
+	ws.title = _sheet_title(layout, lang, card)
 	ws.sheet_view.rightToLeft = lang == "ar"
 	ws.append(headers)
 	for cell in ws[1]:
@@ -184,7 +237,7 @@ def _write_xlsx(path, headers, rows, layout, lang):
 			if cell.data_type in ("f", "e"):
 				cell.data_type = "s"
 
-	formats = {date: "yyyy-mm-dd", time: "hh:mm:ss"}
+	formats = {date: CARD_DATE_FORMAT if layout == "timecard" else "yyyy-mm-dd", time: "hh:mm:ss"}
 	for column in ws.iter_cols(min_row=2):
 		for cell in column:
 			for kind, number_format in formats.items():
@@ -192,13 +245,17 @@ def _write_xlsx(path, headers, rows, layout, lang):
 					cell.number_format = number_format
 
 	for i, header in enumerate(headers, start=1):
-		width = max([len(header)] + [len(str(_csv_value(r[i - 1]))) for r in rows[:500]])
-		ws.column_dimensions[get_column_letter(i)].width = min(max(width + 2, 10), 40)
+		if layout == "timecard":
+			width = CARD_COLUMNS[i - 1][1]
+		else:
+			width = max([len(header)] + [len(str(_csv_value(r[i - 1]))) for r in rows[:500]])
+			width = min(max(width + 2, 10), 40)
+		ws.column_dimensions[get_column_letter(i)].width = width
 	ws.freeze_panes = "A2"
 	ws.auto_filter.ref = ws.dimensions
 	wb.save(path)
 
 
 def default_filename(start: date, end: date, layout, fmt):
-	kind = "daily" if layout == "daily" else "attendance"
+	kind = {"daily": "daily", "timecard": "timecard"}.get(layout, "attendance")
 	return f"{kind}_{start:%Y-%m-%d}_to_{end:%Y-%m-%d}.{fmt}"

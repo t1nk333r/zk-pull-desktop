@@ -2,7 +2,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTime, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
 	QCheckBox,
@@ -16,8 +16,10 @@ from PySide6.QtWidgets import (
 	QLineEdit,
 	QMessageBox,
 	QPushButton,
+	QSpinBox,
 	QTableWidget,
 	QTableWidgetItem,
+	QTimeEdit,
 	QVBoxLayout,
 	QWidget,
 )
@@ -26,6 +28,7 @@ from . import __version__, messages
 from .dialogs import DeviceDialog
 from .i18n import LANGUAGES, is_rtl, isolate, language, tr
 from .store import Store
+from .timecard import Timetable
 from .worker import busy, window_busy
 
 
@@ -121,12 +124,79 @@ class SettingsTab(QWidget):
 		layout = QVBoxLayout(self)
 		layout.addWidget(devices_box, 1)
 		layout.addWidget(general_box)
+		layout.addWidget(self._timecard_box())
 
 		self.reload_devices()
 		self.language.currentIndexChanged.connect(self._language_changed)
 		self.header_language.currentIndexChanged.connect(
 			lambda: store.set("header_language", self.header_language.currentData())
 		)
+
+	def _timecard_box(self):
+		"""The shift the Time card export measures against; the defaults are a ZKTeco "Daytime"."""
+		t = Timetable.load(self.store.get)
+		self.tc_name = QLineEdit(t.name)
+		self.tc_on, self.tc_off = QTimeEdit(), QTimeEdit()
+		for edit, value in ((self.tc_on, t.on_duty), (self.tc_off, t.off_duty)):
+			edit.setLayoutDirection(Qt.LayoutDirection.LeftToRight)  # 08:00, not 00:08, in Arabic
+			edit.setDisplayFormat("HH:mm")
+			edit.setTime(QTime(value.hour, value.minute))
+		self.tc_off.setMinimumTime(self.tc_on.time().addSecs(60))  # day shifts only
+		self.tc_minutes = {}
+		for key, value in (
+			("timecard_late_grace", t.late_grace),
+			("timecard_early_grace", t.early_grace),
+			("timecard_ot_after", t.overtime_after),
+			("timecard_missing", t.missing_punch),
+		):
+			spin = QSpinBox()
+			spin.setRange(0, 240)
+			spin.setValue(value)
+			self.tc_minutes[key] = spin
+		self.tc_weekend = {}
+		weekend = QHBoxLayout()
+		for day in (6, 0, 1, 2, 3, 4, 5):  # the Saudi week starts on Sunday
+			box = QCheckBox(tr(f"weekday_{day}"))
+			box.setChecked(day in t.weekend)
+			self.tc_weekend[day] = box
+			weekend.addWidget(box)
+		weekend.addStretch()
+		hours = QHBoxLayout()
+		hours.addWidget(self.tc_on)
+		hours.addWidget(QLabel("–"))
+		hours.addWidget(self.tc_off)
+		hours.addStretch()
+
+		box = QGroupBox(tr("timecard"))
+		form = QFormLayout(box)
+		form.addRow(tr("timecard_name"), self.tc_name)
+		form.addRow(tr("timecard_hours"), hours)
+		for key, spin in self.tc_minutes.items():
+			form.addRow(tr(key), spin)
+		form.addRow(tr("timecard_weekend"), weekend)
+
+		self.tc_name.editingFinished.connect(self._timecard_changed)
+		self.tc_on.timeChanged.connect(lambda t: self.tc_off.setMinimumTime(t.addSecs(60)))
+		for widget in (self.tc_on, self.tc_off):
+			widget.timeChanged.connect(self._timecard_changed)
+		for spin in self.tc_minutes.values():
+			spin.valueChanged.connect(self._timecard_changed)
+		for check in self.tc_weekend.values():
+			check.toggled.connect(self._timecard_changed)
+		return box
+
+	def _timecard_changed(self):
+		m = {key: spin.value() for key, spin in self.tc_minutes.items()}
+		Timetable(
+			name=self.tc_name.text().strip() or Timetable().name,
+			on_duty=self.tc_on.time().toPython(),
+			off_duty=self.tc_off.time().toPython(),
+			late_grace=m["timecard_late_grace"],
+			early_grace=m["timecard_early_grace"],
+			overtime_after=m["timecard_ot_after"],
+			missing_punch=m["timecard_missing"],
+			weekend=frozenset(day for day, box in self.tc_weekend.items() if box.isChecked()),
+		).save(self.store.set)
 
 	def reload_devices(self):
 		self._devices = self.store.devices()

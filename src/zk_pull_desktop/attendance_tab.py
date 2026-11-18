@@ -29,6 +29,7 @@ from . import export, messages
 from .i18n import is_rtl, isolate, punch_label, tr, verify_label
 from .periods import PERIODS, period_range
 from .store import PunchRow, Store, normalize_id
+from .timecard import Timetable
 from .worker import busy, run_in_background
 
 log = logging.getLogger(__name__)
@@ -91,6 +92,8 @@ class AttendanceTab(QWidget):
 		self.notes = []
 
 		self.device = QComboBox()
+		self.employee = QComboBox()
+		self.employee.setToolTip(tr("employee_hint"))
 		self.last_pull = QLabel()
 		self.last_pull.setEnabled(False)  # greyed: information, not a control
 		self.period = QComboBox()
@@ -105,7 +108,10 @@ class AttendanceTab(QWidget):
 		self.layout_choice = QComboBox()
 		self.layout_choice.addItem(tr("layout_log_short"), "log")
 		self.layout_choice.addItem(tr("layout_daily_short"), "daily")
-		self.layout_choice.setToolTip(tr("layout_log") + "\n" + tr("layout_daily"))
+		self.layout_choice.addItem(tr("layout_timecard_short"), "timecard")
+		self.layout_choice.setToolTip(
+			"\n".join(tr(k) for k in ("layout_log", "layout_daily", "layout_timecard"))
+		)
 		self.layout_choice.setCurrentIndex(max(self.layout_choice.findData(store.get("layout", "log")), 0))
 		self.xlsx = QRadioButton("Excel (.xlsx)")
 		self.csv = QRadioButton("CSV")
@@ -135,6 +141,9 @@ class AttendanceTab(QWidget):
 		filters.addWidget(self.device)
 		filters.addWidget(self.last_pull)
 		filters.addSpacing(12)
+		filters.addWidget(QLabel(tr("employee")))
+		filters.addWidget(self.employee)
+		filters.addSpacing(12)
 		for label, widget in ((tr("period"), self.period), (tr("from"), self.start), (tr("to"), self.end)):
 			filters.addWidget(QLabel(label))
 			filters.addWidget(widget)
@@ -160,6 +169,7 @@ class AttendanceTab(QWidget):
 		layout.addWidget(self.table, 1)
 		layout.addLayout(actions)
 
+		self.reload_employees()
 		self.reload_devices()
 		self.period.setCurrentIndex(PERIODS.index(store.get("period", "this_month")))
 		self._apply_period()
@@ -167,6 +177,7 @@ class AttendanceTab(QWidget):
 		self.start.dateChanged.connect(self._dates_edited)
 		self.end.dateChanged.connect(self._dates_edited)
 		self.device.currentIndexChanged.connect(self.refresh)
+		self.employee.currentIndexChanged.connect(self.refresh)
 		self.search.textChanged.connect(self.refresh)
 		self.pull_button.clicked.connect(self._pull_clicked)
 		self.export_button.clicked.connect(self.export)
@@ -211,6 +222,23 @@ class AttendanceTab(QWidget):
 		self.device.blockSignals(False)
 		self.refresh()
 
+	def reload_employees(self):
+		"""The Employee choices: everyone named in People or seen in a pull. The choice is kept."""
+		current = self.employee.currentData()
+		self.employee.blockSignals(True)
+		self.employee.clear()
+		self.employee.addItem(tr("all_employees"), None)
+		for p in self.store.employees():
+			name = (isolate(p.name) if is_rtl() else p.name) if p.name else ""
+			self.employee.addItem(f"{p.user_id} · {name}" if name else p.user_id, p.user_id)
+		self.employee.setCurrentIndex(max(self.employee.findData(current), 0))
+		self.employee.blockSignals(False)
+
+	def people_changed(self):
+		"""Names were edited or imported in the People tab."""
+		self.reload_employees()
+		self.refresh()
+
 	def selected_devices(self):
 		devices = self.store.devices()
 		chosen = self.device.currentData()
@@ -236,12 +264,15 @@ class AttendanceTab(QWidget):
 		self.refresh()
 
 	def _rows(self):
-		"""The punches shown, and exported: period, device and search applied."""
+		"""The punches shown, and exported: period, device, employee and search applied."""
 		start, end = self.range()
 		serials = None  # all devices: every punch, including ones from devices removed since
 		if self.device.currentData() is not None:
 			serials = self.store.serials([self.device.currentData()])  # every serial it has reported
 		rows = self.store.punches(start, end, serials)
+		employee = self.employee.currentData()
+		if employee is not None:
+			rows = [p for p in rows if p.user_id == employee]
 		needle = normalize_id(self.search.text()).casefold()
 		if needle:
 			rows = [p for p in rows if needle in f"{p.user_id} {p.name} {p.department}".casefold()]
@@ -331,6 +362,7 @@ class AttendanceTab(QWidget):
 	def _pull_next(self):
 		if not self.queue:
 			self.pull_button.setText(tr("pull") + "  (F5)")
+			self.reload_employees()  # the pull may have brought new IDs
 			self.refresh()
 			self._report()
 			return
@@ -436,12 +468,33 @@ class AttendanceTab(QWidget):
 	# Export
 
 	def _export_name(self, start, end, layout, fmt):
+		"""attendance[_<device>][_<employee ID>]_<from>_to_<to>.<fmt>"""
 		name = export.default_filename(start, end, layout, fmt)
+		tags = []
 		if self.device.currentData() is not None:
-			device = re.sub(r"[^\w\-]+", "_", self.device.currentText()).strip("_")
-			if device:
-				name = name.replace("_", f"_{device}_", 1)
+			tags.append(self.device.currentText())
+		if self.employee.currentData() is not None:
+			tags.append(self.employee.currentData())
+		tags = [t for t in (re.sub(r"[^\w\-]+", "_", t).strip("_") for t in tags) if t]
+		if tags:
+			name = name.replace("_", f"_{'_'.join(tags)}_", 1)
 		return name
+
+	def _card_request(self, rows) -> export.CardRequest:
+		"""Who is on the time card: the employee chosen; otherwise everyone with punches shown, and,
+		unless a device or a search narrows it down, everyone in People (an employee absent all
+		period is on the card too)."""
+		names = {p.user_id: p.name for p in self.store.employees()}
+		chosen = self.employee.currentData()
+		if chosen is not None:
+			ids = {chosen}
+		else:
+			ids = {p.user_id for p in rows}
+			if self.device.currentData() is None and not self.search.text().strip():
+				ids |= {p.user_id for p in self.store.people()}
+		people = sorted(((i, names.get(i, "")) for i in ids), key=lambda p: (len(p[0]), p[0]))
+		start, end = self.range()
+		return export.CardRequest(people, start, end, Timetable.load(self.store.get), date.today())
 
 	def export(self):
 		if self.period.currentData() != "custom":
@@ -451,14 +504,16 @@ class AttendanceTab(QWidget):
 			messages.info(self, tr("app_title"), tr("from_after_to"))
 			return
 		rows = self._rows()
-		if not rows:
+		layout = self.layout_choice.currentData()
+		card = self._card_request(rows) if layout == "timecard" else None
+		# A time card has a row for every working day, so one with no punches at all still says Absent.
+		if not (card.people if card else rows):
 			messages.info(self, tr("app_title"), tr("nothing_to_export"))
 			return
 		gaps = self._gaps()
 		if gaps and not messages.ask(self, tr("export"), tr("confirm_export_gaps", **gaps)):
 			return
 		fmt = self.fmt()
-		layout = self.layout_choice.currentData()
 		folder = Path(self.store.get("export_folder") or Path.home())
 		suggested = str(folder / self._export_name(start, end, layout, fmt))
 		filters = "Excel (*.xlsx)" if fmt == "xlsx" else "CSV (*.csv)"
@@ -472,7 +527,7 @@ class AttendanceTab(QWidget):
 			if path.exists() and not messages.ask(self, tr("export"), tr("confirm_overwrite", path=path)):
 				return
 		try:
-			count = export.write(path, rows, fmt, layout, self.store.get("header_language", "en"))
+			count = export.write(path, rows, fmt, layout, self.store.get("header_language", "en"), card)
 		except export.FileInUseError:
 			log.exception("Export to %s failed", path)
 			messages.warn(self, tr("error"), tr("export_in_use", path=path))

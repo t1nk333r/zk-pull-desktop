@@ -46,7 +46,7 @@ class MainWindow(QMainWindow):
 		status = self.statusBar().showMessage
 
 		self.attendance = AttendanceTab(store, status)
-		self.people = PeopleTab(store, status, on_change=self.attendance.refresh)
+		self.people = PeopleTab(store, status, on_change=self.attendance.people_changed)
 		self.settings = SettingsTab(
 			store,
 			data_dir,
