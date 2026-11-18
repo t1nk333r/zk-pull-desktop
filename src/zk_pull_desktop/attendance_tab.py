@@ -468,13 +468,15 @@ class AttendanceTab(QWidget):
 	# Export
 
 	def _export_name(self, start, end, layout, fmt):
-		"""attendance[_<device>][_<employee ID>]_<from>_to_<to>.<fmt>"""
+		"""attendance[_<device>][_<employee ID>_<name>]_<from>_to_<to>.<fmt>"""
 		name = export.default_filename(start, end, layout, fmt)
 		tags = []
 		if self.device.currentData() is not None:
 			tags.append(self.device.currentText())
-		if self.employee.currentData() is not None:
-			tags.append(self.employee.currentData())
+		chosen = self.employee.currentData()
+		if chosen is not None:
+			names = {p.user_id: p.name for p in self.store.employees()}
+			tags += [chosen, (names.get(chosen) or "")[:40]]
 		tags = [t for t in (re.sub(r"[^\w\-]+", "_", t).strip("_") for t in tags) if t]
 		if tags:
 			name = name.replace("_", f"_{'_'.join(tags)}_", 1)

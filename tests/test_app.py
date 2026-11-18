@@ -96,3 +96,21 @@ def test_background_callbacks_of_a_window_are_found_through_partial():
 
 def test_smoke_test_starts_the_app_and_quits():
 	assert app.smoke_test() == 0
+
+
+def test_export_name_carries_the_employee_id_and_name(tmp_path):
+	from datetime import date
+
+	from PySide6.QtWidgets import QApplication
+
+	from zk_pull_desktop.attendance_tab import AttendanceTab
+
+	QApplication.instance() or QApplication([])
+	s = Store(tmp_path / "db.sqlite")
+	s.import_names({"12": "كريس Smith"})
+	tab = AttendanceTab(s, lambda message: None)
+	tab.reload_employees()
+	tab.employee.setCurrentIndex(tab.employee.findData("12"))
+	name = tab._export_name(date(2026, 9, 1), date(2026, 9, 30), "timecard", "xlsx")
+	assert name == "timecard_12_كريس_Smith_2026-09-01_to_2026-09-30.xlsx"
+	s.close()

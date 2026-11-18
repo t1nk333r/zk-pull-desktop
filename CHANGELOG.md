@@ -2,6 +2,22 @@
 
 Each version's section becomes the description of its GitHub release.
 
+## 0.5.2 (2026-11-18)
+
+Installed from 0.2.0 or later, the app offers this update by itself.
+
+**Changed**
+- Exporting one employee now names the file after them: `timecard_12_Cris_2026-09-01_to_2026-09-30.xlsx` (ID, then name), so each employee's time card can be told apart in the folder.
+
+<div dir="rtl">
+
+إذا كان الإصدار 0.2.0 أو أحدث مثبّتًا فسيعرض البرنامج هذا التحديث تلقائيًا.
+
+**تغييرات**
+- عند تصدير موظف واحد يُسمّى الملف باسمه: الرقم ثم الاسم، مثل `timecard_12_Cris_2026-09-01_to_2026-09-30.xlsx`، فتتميّز بطاقة كل موظف في المجلد.
+
+</div>
+
 ## 0.5.1 (2026-11-18)
 
 Installed from 0.2.0 or later, the app offers this update by itself.
