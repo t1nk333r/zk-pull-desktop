@@ -68,7 +68,7 @@ def test_daily_backup_keeps_seven_good_copies(tmp_path):
 
 
 def test_device_addresses_are_checked_and_normalized():
-	from zk_pull_desktop.dialogs import normalize_ip
+	from zk_pull_desktop.store import normalize_ip
 
 	assert normalize_ip(" 192.168.100.056 ") == "192.168.100.56"  # Windows would read 056 as octal
 	assert normalize_ip("١٩٢.١٦٨.١.٢٠١") == "192.168.1.201"

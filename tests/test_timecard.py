@@ -63,7 +63,9 @@ def test_card_rows_mark_absent_days_skip_fridays_and_days_to_come():
 		punch(at(17, 11, day=date(2026, 9, 17))),
 		punch(at(17, 5, day=date(2026, 9, 19))),  # a lone punch late in the day is the clock out
 	]
-	rows = card_rows(punches, [("12", "Cris")], date(2026, 9, 17), date(2026, 9, 30), T, date(2026, 9, 21))
+	rows = card_rows(
+		punches, [("12", "Cris")], date(2026, 9, 17), date(2026, 9, 30), T, at(18, 0, day=date(2026, 9, 21))
+	)
 	assert [(r.day.day, r.clock_in, r.clock_out, r.absent) for r in rows] == [
 		(17, "07:45", "17:11", False),
 		# 18th: Friday, no punches, not on the card
@@ -83,13 +85,13 @@ def test_a_weekend_day_with_punches_is_on_the_card():
 		friday,
 		friday,
 		T,
-		friday,
+		at(18, 0, day=friday),
 	)
 	assert [(r.clock_in, r.clock_out) for r in rows] == [("09:00", "13:00")]
 
 
 def test_unnamed_employee_is_shown_by_id():
-	rows = card_rows([], [("0012", "")], DAY, DAY, T, DAY)
+	rows = card_rows([], [("0012", "")], DAY, DAY, T, at(18, 0))
 	assert (rows[0].name, rows[0].absent) == ("0012", True)
 
 
@@ -105,7 +107,9 @@ def test_timetable_settings_round_trip_and_bad_values_fall_back():
 
 
 def card_request(people=(("12", "Cris"),)):
-	return export.CardRequest(list(people), date(2026, 9, 17), date(2026, 9, 21), T, date(2026, 11, 18))
+	return export.CardRequest(
+		list(people), date(2026, 9, 17), date(2026, 9, 21), T, datetime(2026, 11, 18, 12)
+	)
 
 
 PUNCHES = [punch(at(7, 45, 40, date(2026, 9, 17))), punch(at(17, 11, 0, date(2026, 9, 17)))]
@@ -129,10 +133,24 @@ def test_xlsx_time_card_is_laid_out_like_the_device_softwares(tmp_path):
 	assert ws.column_dimensions["B"].width == 17
 
 
-def test_csv_time_card_dates_and_arabic_headers(tmp_path):
+def test_csv_time_card_has_iso_dates_and_arabic_headers(tmp_path):
+	# Excel reads 10/5/2026 as 10 May on Arabic and UK Windows; 2026-10-05 reads the same everywhere.
 	path = tmp_path / "card.csv"
 	export.write(path, PUNCHES, "csv", "timecard", "ar", card_request([("0012", "")]))
 	with open(path, encoding="utf-8-sig", newline="") as f:
 		rows = list(csv.reader(f))
 	assert rows[0][0] == "الاسم" and rows[0][9] == "غائب"
-	assert rows[1][:2] == ['="0012"', "9/17/2026"] and rows[1][9] == "نعم"  # no punches for 0012
+	assert rows[1][:2] == ['="0012"', "2026-09-17"] and rows[1][9] == "نعم"  # no punches for 0012
+
+
+def test_a_finger_pressed_twice_is_one_punch():
+	rows = card_rows([punch(at(8, 0, 5)), punch(at(8, 0, 40))], [("12", "Cris")], DAY, DAY, T, at(18, 0))
+	assert (rows[0].clock_in, rows[0].clock_out, rows[0].early) == ("08:00", "", "01:00")
+	rows = card_rows([punch(at(17, 30)), punch(at(17, 31))], [("12", "Cris")], DAY, DAY, T, at(18, 0))
+	assert (rows[0].clock_in, rows[0].clock_out, rows[0].late) == ("", "17:30", "01:00")
+
+
+def test_today_is_left_out_until_off_duty():
+	punches = [punch(at(7, 50))]
+	assert card_rows(punches, [("12", "Cris")], DAY, DAY, T, at(11, 0)) == []
+	assert len(card_rows(punches, [("12", "Cris")], DAY, DAY, T, at(17, 0))) == 1

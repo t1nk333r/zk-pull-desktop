@@ -10,6 +10,7 @@ are checked before use, and a session can be cancelled from the UI thread at any
 while it is still connecting.
 """
 
+import ipaddress
 import logging
 import re
 import socket
@@ -60,7 +61,16 @@ def clean(text) -> str:
 class DeviceError(Exception):
 	"""The device could not be read. reason is one of REASONS; the UI shows a translated message."""
 
-	REASONS = ("unreachable", "comm_key", "timeout", "closed", "too_much", "bad_data", "no_serial")
+	REASONS = (
+		"unreachable",
+		"comm_key",
+		"timeout",
+		"closed",
+		"too_much",
+		"bad_data",
+		"no_serial",
+		"invalid_ip",
+	)
 
 	def __init__(self, reason, detail=""):
 		assert reason in self.REASONS, reason
@@ -311,8 +321,20 @@ def cancel_all():
 			conn.cancel()
 
 
+def _check_address(ip):
+	"""Only a plain IPv4 address on the LAN is dialled: a leading zero (Windows reads it as octal),
+	a hostname or a public address saved by an older version is refused, not connected to."""
+	try:
+		address = ipaddress.IPv4Address(ip)  # refuses leading zeros and hostnames
+	except ValueError:
+		raise DeviceError("invalid_ip", ip) from None
+	if address.is_global or address.is_multicast or address.is_unspecified:
+		raise DeviceError("invalid_ip", ip)
+
+
 @contextmanager
 def _session(ip, port, comm_key, timeout):
+	_check_address(ip)
 	conn = _Connection(ip, port, timeout, time.monotonic() + SESSION_DEADLINE)
 	with _active_lock:  # before connecting, so Cancel works while the device does not answer
 		_active.add(conn)

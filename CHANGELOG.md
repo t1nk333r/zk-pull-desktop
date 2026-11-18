@@ -2,6 +2,34 @@
 
 Each version's section becomes the description of its GitHub release.
 
+## 0.5.1 (2026-11-18)
+
+Installed from 0.2.0 or later, the app offers this update by itself.
+
+**Fixed**
+- Time card: a finger pressed twice (two punches minutes apart) is one punch, not a clock in and out seconds apart; the card uses all of each person's punches, so leftover search text or one chosen device no longer turns days into Absent or missing punches; today is left out until its off duty has passed; CSV dates are 2026-09-17, which Excel reads the same on any Windows.
+- Days never pulled: a pull now covers only what it could read. A pull of "this month" no longer counts the days after it, and its own day counts only while it is today, so exporting a month later warns about the days still to pull. A device pulled before 0.4.1 with no punches stored no longer warns about every day.
+- Names import: the ID and name columns are found by their headers (a sheet starting with a serial number "م", or with the name first, imports correctly); a file whose columns look shifted or swapped is refused instead of saved over the names; a quote left open is refused with its line number; before names already typed are replaced, the import says how many and asks.
+- **Add IDs without a name** no longer clears the department of people listed without a name.
+- Device addresses saved before 0.4.1 with a leading zero (192.168.100.056) are fixed when the app starts, and an address that is not on the office network is never dialled.
+- Updates: an update stopped part-way also restores the old ZK Pull.exe; a finished download waits for an open dialog or an import before closing the app; an installer blocked by antivirus is reported instead of leaving "Downloading…" for good.
+- The Qt licence notice now says which PySide6 parts are inside ZK Pull.exe and how to rebuild with your own.
+
+<div dir="rtl">
+
+إذا كان الإصدار 0.2.0 أو أحدث مثبّتًا فسيعرض البرنامج هذا التحديث تلقائيًا.
+
+**الإصلاحات**
+- بطاقة الدوام: الضغط على الجهاز مرتين (بصمتان بينهما دقائق) بصمة واحدة، لا حضور وانصراف بينهما ثوانٍ؛ والبطاقة تستخدم كل بصمات الموظف، فلم يعد نص بحث متبقٍ أو اختيار جهاز واحد يحوّل الأيام إلى غياب أو بصمة ناقصة؛ واليوم الحالي لا يظهر حتى تمر نهاية دوامه؛ وتواريخ CSV بصيغة 2026-09-17 التي يقرؤها Excel بالطريقة نفسها في أي نسخة Windows.
+- الأيام التي لم تُسحب: السحب يغطي الآن ما استطاع قراءته فقط. سحب "هذا الشهر" لم يعد يُحتسب للأيام التي بعده، ويومه نفسه يُحتسب ما دام هو اليوم الحالي، فالتصدير بعد شهر ينبّه إلى الأيام التي ما زال سحبها مطلوبًا. والجهاز الذي سُحب قبل 0.4.1 دون بصمات محفوظة لم يعد ينبّه عن كل يوم.
+- استيراد الأسماء: يُعرف عمودا الرقم والاسم من عناوينهما (الورقة التي تبدأ بعمود "م" أو بالاسم أولًا تُستورد صحيحة)، والملف الذي تبدو أعمدته مزاحة أو مقلوبة يُرفض بدلًا من حفظه مكان الأسماء، وعلامة الاقتباس التي لم تُغلق تُرفض مع رقم سطرها، وقبل استبدال أسماء مكتوبة سابقًا يبيّن الاستيراد عددها ويسأل.
+- **إضافة الأرقام التي بلا اسم** لم تعد تمسح قسم الموظفين المسجلين بلا اسم.
+- عناوين الأجهزة المحفوظة قبل 0.4.1 بأصفار في البداية (192.168.100.056) تُصحَّح عند تشغيل البرنامج، ولا يُتصل أبدًا بعنوان من خارج شبكة المكتب.
+- التحديثات: التحديث الذي يتوقف في منتصفه يستعيد أيضًا ملف ZK Pull.exe القديم، والتنزيل المكتمل ينتظر إغلاق أي نافذة حوار أو انتهاء الاستيراد قبل إغلاق البرنامج، والمثبّت الذي يمنعه برنامج الحماية يُبلَّغ عنه بدلًا من بقاء "جارٍ التنزيل…" دائمًا.
+- إشعار ترخيص Qt يبيّن الآن أجزاء PySide6 الموجودة داخل ZK Pull.exe وكيفية إعادة البناء بنسختك.
+
+</div>
+
 ## 0.5.0 (2026-11-18)
 
 Installed from 0.2.0 or later, the app offers this update by itself.

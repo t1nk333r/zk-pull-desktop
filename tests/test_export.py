@@ -263,3 +263,43 @@ def test_names_xlsx_keeps_leading_zeros_of_a_zero_padded_number(tmp_path):
 	path = tmp_path / "names.xlsx"
 	wb.save(path)
 	assert read_names_file(path) == {"0012": "Sara", "7": "Omar"}
+
+
+def test_names_file_columns_are_found_by_their_headers(tmp_path):
+	path = tmp_path / "names.csv"
+	path.write_text("م,الرقم,الاسم\n1,1001,سارة\n2,1002,Omar\n", encoding="utf-8")  # serial first
+	assert read_names_file(path) == {"1001": "سارة", "1002": "Omar"}
+	path.write_text("Name,ID\nAli,7\nHuda,8\n", encoding="utf-8")  # name first
+	assert read_names_file(path) == {"7": "Ali", "8": "Huda"}
+
+
+def test_names_file_with_shifted_columns_is_refused(tmp_path):
+	import pytest
+
+	from zk_pull_desktop.people_tab import NamesFileError
+
+	path = tmp_path / "names.csv"
+	path.write_text("1,1001,Sara\n2,1002,Omar\n", encoding="utf-8")  # a serial column, no header
+	with pytest.raises(NamesFileError):
+		read_names_file(path)
+	path.write_text("Ali,7\nHuda,8\n", encoding="utf-8")  # swapped, no header
+	with pytest.raises(NamesFileError):
+		read_names_file(path)
+
+
+def test_names_file_with_an_open_quote_is_refused(tmp_path):
+	import pytest
+
+	from zk_pull_desktop.people_tab import NamesFileError
+
+	path = tmp_path / "names.csv"
+	path.write_text('1,Ali\n2,"Omar\n3,Saleh\n4,Fahd\n', encoding="utf-8")
+	with pytest.raises(NamesFileError, match="2"):
+		read_names_file(path)
+
+
+def test_names_file_counts_ids_given_two_names(tmp_path):
+	path = tmp_path / "names.csv"
+	path.write_text("1,Ali\n2,Omar\n1,Ali Hassan\n2,Omar\n", encoding="utf-8")
+	names = read_names_file(path)
+	assert names == {"1": "Ali Hassan", "2": "Omar"} and names.duplicates == 1

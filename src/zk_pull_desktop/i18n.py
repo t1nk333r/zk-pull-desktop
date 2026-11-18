@@ -180,6 +180,26 @@ TEXTS = {
 		"أُضيفت أرقام بلا اسم (العدد: {count})؛ اكتب الأسماء في عمود الاسم.",
 	),
 	"file_too_large": ("The file is too large for a names list.", "الملف أكبر من أن يكون قائمة أسماء."),
+	"bad_csv": (
+		'A quote (") opened on line {line} of the file is never closed, so the names after it cannot be '
+		"read. Fix that line, or save the file again from Excel, and import it again.",
+		'علامة اقتباس (") في السطر {line} من الملف لم تُغلق، فلا يمكن قراءة الأسماء بعدها. أصلح ذلك السطر، '
+		"أو احفظ الملف مرة أخرى من Excel، ثم استورده من جديد.",
+	),
+	"names_wrong_columns": (
+		"The columns of this file do not look like employee ID, then name: most names are numbers, or "
+		"most IDs have no digit. Put the ID first and the name second, or give them the headers ID and "
+		"Name, and import it again. No names were changed.",
+		"لا تبدو أعمدة هذا الملف رقم الموظف ثم الاسم: معظم الأسماء أرقام، أو معظم الأرقام بلا أي رقم. اجعل "
+		"الرقم في العمود الأول والاسم في الثاني، أو اكتب فوقهما العنوانين رقم والاسم، ثم استورده من جديد. "
+		"لم يتغير أي اسم.",
+	),
+	"confirm_import": (
+		"This file replaces {replaced} names already saved, and gives {duplicates} IDs more than one name "
+		"(the last row is used). Import it?",
+		"هذا الملف يستبدل أسماء محفوظة (العدد: {replaced})، ويعطي أرقامًا أكثر من اسم (العدد: {duplicates})، "
+		"ويُعتمد آخر صف لكل منها. هل تريد استيراده؟",
+	),
 	"bad_encoding": (
 		"Line {line} of the file has characters that are not valid UTF-8, so the names cannot be read "
 		'safely. Save the file again as "CSV UTF-8" and import it again.',

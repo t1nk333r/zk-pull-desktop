@@ -72,7 +72,7 @@ class CardRequest:
 	start: date
 	end: date
 	timetable: Timetable
-	today: date
+	now: datetime
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,7 @@ def _table(punches, layout, lang, card=None):
 				r.name, r.day, r.timetable, r.on_duty, r.off_duty, r.clock_in, r.clock_out, r.late,
 				r.early, yes if r.absent else "", r.overtime, r.work, r.attended,
 			]
-			for r in card_rows(punches, card.people, card.start, card.end, card.timetable, card.today)
+			for r in card_rows(punches, card.people, card.start, card.end, card.timetable, card.now)
 		]  # fmt: skip
 	elif layout == "daily":
 		headers = [tr(c, lang) for c in DAILY_COLUMNS]
@@ -195,8 +195,6 @@ def write(
 			with open(temp, "w", newline="", encoding="utf-8-sig") as f:
 				writer = csv.writer(f)
 				writer.writerow(headers)
-				if layout == "timecard":  # 9/17/2026, as in the XLSX
-					rows = [[r[0], f"{r[1].month}/{r[1].day}/{r[1].year}", *r[2:]] for r in rows]
 				writer.writerows([_csv_id(row[0]), *(_csv_value(v) for v in row[1:])] for row in rows)
 		else:
 			_write_xlsx(temp, headers, rows, layout, lang, card)

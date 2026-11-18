@@ -1,5 +1,3 @@
-import ipaddress
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
 	QDialog,
@@ -18,24 +16,8 @@ from PySide6.QtWidgets import (
 from . import device as zk
 from . import messages
 from .i18n import LANGUAGES, tr
-from .store import Device, Store, normalize_id
+from .store import Device, Store, normalize_ip
 from .worker import busy, run_in_background
-
-
-def normalize_ip(text: str) -> str | None:
-	"""The address as Windows should get it, or None if it is not a device on the office network.
-
-	Leading zeros are dropped: Windows reads 192.168.100.056 as octal and connects to .46."""
-	parts = normalize_id(text).split(".")
-	if len(parts) != 4 or not all(p.isascii() and p.isdigit() for p in parts):
-		return None  # hostnames too: the app is for the LAN, by address
-	try:
-		address = ipaddress.IPv4Address(".".join(str(int(p)) for p in parts))
-	except ValueError:
-		return None
-	if address.is_global or address.is_multicast or address.is_unspecified:
-		return None
-	return str(address)
 
 
 class LanguageDialog(QDialog):

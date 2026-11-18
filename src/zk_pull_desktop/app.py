@@ -221,12 +221,18 @@ class App:
 		self._check_failed(message, silent=False)
 
 	def _downloaded(self, path):
-		if worker.busy():
-			# A pull started during the download: install when it is done, without downloading again.
+		if worker.running() or QApplication.activeModalWidget() is not None:
+			# A pull, an import or an open dialog would be lost when the app quits: install once they
+			# are done, without downloading again.
 			QTimer.singleShot(2000, lambda: self._downloaded(path))
 			return
 		log.info("Running installer %s", path)
-		updater.run_installer(path, self.data_dir / "update.log")
+		try:
+			updater.run_installer(path, self.data_dir / "update.log")
+		except OSError as e:  # quarantined by antivirus, or deleted from %TEMP%
+			log.exception("Could not start the installer %s", path)
+			self._download_failed(worker.error_message(e))
+			return
 		self.qt_app.quit()
 
 

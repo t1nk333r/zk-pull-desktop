@@ -14,9 +14,11 @@ device software's report (08:18:30 gives Late 18 and Work 08:41):
 - ATT: clock in to clock out.
 - A missing clock in or out counts as missing_punch minutes Late / Early, taken off Work; the shift
   start / end stands in for it in ATT. A clock out at or before the clock in counts as missing.
-- Clock in is the day's first punch and clock out its last; a lone punch after the middle of the
+- Clock in is the day's first punch and clock out its last. Punches within REPEAT_MINUTES of the
+  first are one punch pressed twice, not a clock in and out. A lone punch after the middle of the
   shift is a clock out (the first punch was forgotten).
 - A working day with no punches is Absent; a weekend day shows only if there are punches on it.
+  Today shows only once off duty has passed: until then nobody has finished the day.
 """
 
 from collections import defaultdict
@@ -91,6 +93,11 @@ class Day:
 	attended: int = 0
 
 
+# The ZKTeco software takes punches close together as one; a finger pressed twice must not become a
+# clock in and a clock out a few seconds apart (Early 08:59 instead of a missing clock out).
+REPEAT_MINUTES = 15
+
+
 def minutes(delta: timedelta) -> int:
 	return max(0, int(delta.total_seconds() // 60))
 
@@ -162,14 +169,15 @@ def card_rows(
 	start: date,
 	end: date,
 	t: Timetable,
-	today: date,
+	now: datetime,
 ) -> list[CardRow]:
 	"""The Time Card of each of people ((user ID, name), in that order), day by day from start to
-	end, up to today: there is nothing to show for days still to come."""
+	end, up to the last finished day: today counts once its off duty has passed."""
 	by_day: dict[tuple[str, date], list[datetime]] = defaultdict(list)
 	for p in punches:
 		by_day[(p.user_id, p.timestamp.date())].append(p.timestamp)
-	last = min(end, today)
+	today = now.date()
+	last = min(end, today if now.time() >= t.off_duty else today - timedelta(days=1))
 	days = [start + timedelta(days=i) for i in range((last - start).days + 1)] if start <= last else []
 	on_text, off_text = t.on_duty.strftime("%H:%M"), t.off_duty.strftime("%H:%M")
 	rows = []
@@ -179,12 +187,12 @@ def card_rows(
 			if not stamps and day.weekday() in t.weekend:
 				continue
 			on, off = datetime.combine(day, t.on_duty), datetime.combine(day, t.off_duty)
-			if len(stamps) == 1:
-				clock_in, clock_out = place_single_punch(stamps[0], on, off)
-			elif stamps:
-				clock_in, clock_out = stamps[0], stamps[-1]
-			else:
+			if not stamps:
 				clock_in = clock_out = None
+			elif stamps[-1] - stamps[0] < timedelta(minutes=REPEAT_MINUTES):
+				clock_in, clock_out = place_single_punch(stamps[0], on, off)
+			else:
+				clock_in, clock_out = stamps[0], stamps[-1]
 			figures = compute_day(on, off, clock_in, clock_out, t)
 			rows.append(
 				CardRow(

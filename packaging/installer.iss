@@ -37,8 +37,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 ; A new version may ship different Qt files, and leftovers from the old one can make Qt load
 ; mismatched plugins, so the old _internal folder must go. It is moved aside before the files are
-; copied and deleted only once they all are ([Code]): [InstallDelete] would delete it for good, and an
-; update aborted part-way (a locked file, a full disk) would leave an app that cannot start.
+; copied, with the exe that matches it (the exe holds the app's Python code), and deleted only once
+; they all are ([Code]): [InstallDelete] would delete it for good, and an update aborted part-way (a
+; locked file, a full disk) would leave an app that cannot start.
 
 [Files]
 Source: "..\dist\ZK Pull\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -46,6 +47,7 @@ Source: "..\dist\ZK Pull\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 [UninstallDelete]
 ; Only there if deleting it after an update failed.
 Type: filesandordirs; Name: "{app}\_internal.old"
+Type: files; Name: "{app}\ZK Pull.exe.old"
 
 [Icons]
 Name: "{group}\ZK Pull"; Filename: "{app}\ZK Pull.exe"
@@ -63,6 +65,7 @@ Filename: "{app}\ZK Pull.exe"; Flags: nowait; Check: IsInAppUpdate
 [Code]
 var
   OldMovedAside: Boolean;
+  ExeMovedAside: Boolean;
   FilesCopied: Boolean;
 
 function OldInternal: String;
@@ -70,28 +73,42 @@ begin
   Result := ExpandConstant('{app}\_internal.old');
 end;
 
+function OldExe: String;
+begin
+  Result := ExpandConstant('{app}\ZK Pull.exe.old');
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
   begin
     DelTree(OldInternal, True, True, True);  // left by an earlier run that could not finish
+    DeleteFile(OldExe);
     if DirExists(ExpandConstant('{app}\_internal')) then
       OldMovedAside := RenameFile(ExpandConstant('{app}\_internal'), OldInternal);
+    if OldMovedAside and FileExists(ExpandConstant('{app}\ZK Pull.exe')) then
+      ExeMovedAside := RenameFile(ExpandConstant('{app}\ZK Pull.exe'), OldExe);
   end
   else if CurStep = ssPostInstall then
   begin
     FilesCopied := True;
     DelTree(OldInternal, True, True, True);
+    DeleteFile(OldExe);
   end;
 end;
 
 procedure DeinitializeSetup;
 begin
-  // Aborted after the old folder was moved: Setup has rolled back the new files, so put it back.
+  // Aborted after the old files were moved: Setup has rolled back the new ones, so put them back.
   if OldMovedAside and not FilesCopied then
   begin
     DelTree(ExpandConstant('{app}\_internal'), True, True, True);
     RenameFile(OldInternal, ExpandConstant('{app}\_internal'));
+    if ExeMovedAside then
+    begin
+      DeleteFile(ExpandConstant('{app}\ZK Pull.exe'));
+      RenameFile(OldExe, ExpandConstant('{app}\ZK Pull.exe'));
+    end;
   end;
 end;
 

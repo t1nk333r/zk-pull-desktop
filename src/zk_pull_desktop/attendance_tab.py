@@ -483,7 +483,9 @@ class AttendanceTab(QWidget):
 	def _card_request(self, rows) -> export.CardRequest:
 		"""Who is on the time card: the employee chosen; otherwise everyone with punches shown, and,
 		unless a device or a search narrows it down, everyone in People (an employee absent all
-		period is on the card too)."""
+		period is on the card too). The filters only choose the people: their card is worked out
+		from all their punches (export), or a day clocked in at one reader and out at another would
+		show a missing punch."""
 		names = {p.user_id: p.name for p in self.store.employees()}
 		chosen = self.employee.currentData()
 		if chosen is not None:
@@ -494,7 +496,7 @@ class AttendanceTab(QWidget):
 				ids |= {p.user_id for p in self.store.people()}
 		people = sorted(((i, names.get(i, "")) for i in ids), key=lambda p: (len(p[0]), p[0]))
 		start, end = self.range()
-		return export.CardRequest(people, start, end, Timetable.load(self.store.get), date.today())
+		return export.CardRequest(people, start, end, Timetable.load(self.store.get), datetime.now())
 
 	def export(self):
 		if self.period.currentData() != "custom":
@@ -526,6 +528,8 @@ class AttendanceTab(QWidget):
 			# The save dialog asked about the name typed, not this one.
 			if path.exists() and not messages.ask(self, tr("export"), tr("confirm_overwrite", path=path)):
 				return
+		if card:
+			rows = self.store.punches(start, end)  # every device, no search: see _card_request
 		try:
 			count = export.write(path, rows, fmt, layout, self.store.get("header_language", "en"), card)
 		except export.FileInUseError:

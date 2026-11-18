@@ -320,3 +320,10 @@ def test_old_8_byte_records_of_a_deleted_user_are_kept_apart():
 	data = table([pack("<HBIB", 7, 1, zk_time(datetime(2026, 11, 1, 8)), 0)], 8)
 	punches, _, _ = device.parse_attendance(data, 1, {3: "7"}, "SN1", NOW)
 	assert punches[0].user_id == "uid:7"
+
+
+def test_an_address_older_versions_saved_unchecked_is_not_dialled():
+	for bad in ("192.168.100.056", "device.local", "8.8.8.8"):
+		with pytest.raises(device.DeviceError) as e:
+			device.probe(bad, 4370)
+		assert e.value.reason == "invalid_ip"

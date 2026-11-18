@@ -32,7 +32,8 @@ from .worker import busy, run_in_background
 log = logging.getLogger(__name__)
 
 
-HEADER_WORDS = ("id", "no", "code", "emp", "رقم", "كود", "الرقم", "الموظف")
+ID_WORDS = ("id", "no", "code", "emp", "رقم", "كود", "الرقم", "الموظف")
+NAME_WORDS = ("name", "اسم")  # "الاسم" and "اسم الموظف" too
 
 
 def _line_of(data: bytes, offset: int) -> int:
@@ -65,10 +66,22 @@ def _is_header(first, rest) -> bool:
 	"""A first row is a header if it names its columns, or if it is the only one without a numeric ID.
 
 	A cell with a digit is an ID ("E001", "NO123"), never a header, even if it contains "no" or "id"."""
-	cell = first[0].casefold() if first else ""
-	if any(ch.isdigit() for ch in cell):
+	cells = [c.casefold() for c in first]
+	if not cells or any(ch.isdigit() for c in cells for ch in c):
 		return False
-	return any(word in cell for word in HEADER_WORDS) or any(r and r[0].isdigit() for r in rest)
+	named = any(word in c for c in cells for word in ID_WORDS + NAME_WORDS)
+	return named or any(r and r[0].isdigit() for r in rest)
+
+
+def _columns(header) -> tuple[int, int]:
+	"""(ID column, name column) from a header row: a sheet may start with a serial number (م) or have
+	the name first. Without headers that say, the first two columns."""
+	cells = [c.casefold() for c in header]
+	names = [i for i, c in enumerate(cells) if any(w in c for w in NAME_WORDS)]
+	ids = [i for i, c in enumerate(cells) if any(w in c for w in ID_WORDS) and i not in names]
+	id_col = ids[0] if ids else 0
+	name_col = next((i for i in names if i != id_col), id_col + 1 if id_col + 1 < len(cells) else 0)
+	return id_col, name_col
 
 
 def _delimiter(text: str) -> str:
@@ -89,12 +102,28 @@ def _delimiter(text: str) -> str:
 	return max(";\t,", key=score)  # max keeps the first of equal scores
 
 
-def _csv_rows(text: str):
+def _csv_rows(text: str) -> list[list[str]]:
 	"""Rows of a CSV with comma, semicolon or tab between columns (Excel uses ";" in many regions).
 
 	csv.Sniffer is not used because its result differs between Python patch releases (3.12.10, which
-	the Windows build bundles, gives up on files that later releases read)."""
-	return csv.reader(io.StringIO(text, newline=""), delimiter=_delimiter(text))
+	the Windows build bundles, gives up on files that later releases read).
+
+	A quote left open would swallow the lines after it into one name, so that is refused with the
+	line where it starts: a cell may span lines (a name with a line break), but not hold the
+	separator and a line break both."""
+	delimiter = _delimiter(text)
+	reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter, strict=True)
+	rows = []
+	line = 1
+	try:
+		for row in islice(reader, MAX_ROWS):
+			if any("\n" in cell and delimiter in cell for cell in row):
+				raise NamesFileError(tr("bad_csv", line=line))
+			rows.append(row)
+			line = reader.line_num + 1
+	except csv.Error as e:
+		raise NamesFileError(tr("bad_csv", line=line)) from e
+	return rows
 
 
 def _xlsx_id(cell) -> str:
@@ -129,34 +158,53 @@ def _check_size(path: Path):
 				raise NamesFileError(tr("file_too_large"))
 
 
-def read_names_file(path: Path) -> dict[str, str]:
-	"""Employee ID -> name from the first two columns of a CSV or XLSX file, skipping a header row."""
+class Names(dict):
+	"""Employee ID -> name, and how many IDs the file gave more than one name (the last row wins)."""
+
+	duplicates = 0
+
+
+MAX_COLUMNS = 20
+
+
+def read_names_file(path: Path) -> Names:
+	"""Employee ID -> name from a CSV or XLSX file: the columns a header row names (ID / رقم, name /
+	الاسم), else the first two.
+
+	A file whose columns are shifted or swapped (names that are all numbers, IDs without a digit) is
+	refused instead of saved over the names: the import replaces names already typed."""
 	_check_size(path)
 	if path.suffix.lower() == ".xlsx":
 		wb = load_workbook(path, read_only=True, data_only=True)
 		rows = [
-			[_xlsx_id(row[0]), *("" if c.value is None else str(c.value) for c in row[1:2])]
-			for row in islice(wb.active.iter_rows(max_col=2), MAX_ROWS)
-			if row
+			[_xlsx_id(c) for c in row] for row in islice(wb.active.iter_rows(max_col=MAX_COLUMNS), MAX_ROWS)
 		]
 		wb.close()
 	else:
-		rows = [row[:2] for row in islice(_csv_rows(_csv_text(path)), MAX_ROWS)]
+		rows = [row[:MAX_COLUMNS] for row in _csv_rows(_csv_text(path))]
 	# A line break inside a cell, or several spaces, become one space.
 	rows = [[" ".join(cell.split()) for cell in row] for row in rows if any(cell.strip() for cell in row)]
+	id_col, name_col = 0, 1
 	if rows and _is_header(rows[0], rows[1:]):
+		id_col, name_col = _columns(rows[0])
 		rows = rows[1:]
-	names = {}
+	names = Names()
 	for row in rows:
-		if len(row) < 2:
+		if len(row) <= max(id_col, name_col):
 			continue
-		user_id, name = normalize_id(row[0]), row[1]
+		user_id, name = normalize_id(row[id_col]), row[name_col]
 		if user_id.endswith(".0") and user_id[:-2].isdigit():  # Excel stored the ID as a number
 			user_id = user_id[:-2]
 		if user_id and name:
+			if names.get(user_id, name) != name:
+				names.duplicates += 1
 			names[user_id] = name
 	if rows and not names:  # a file with content but no ID/name pairs is the wrong file or layout
 		raise NamesFileError(tr("no_names_found"))
+	numeric_names = sum(normalize_id(n).isdigit() for n in names.values())
+	ids_without_digits = sum(not any(ch.isdigit() for ch in i) for i in names)
+	if max(numeric_names, ids_without_digits) * 2 > len(names):
+		raise NamesFileError(tr("names_wrong_columns"))
 	return names
 
 
@@ -281,8 +329,7 @@ class PeopleTab(QWidget):
 
 	def add_unnamed(self):
 		missing = self.store.unnamed_user_ids()
-		for user_id in missing:
-			self.store.save_person(Person(user_id, ""))
+		self.store.add_people(missing)  # IDs already listed keep their department
 		if missing:
 			self.search.clear()
 		self.reload()
@@ -336,7 +383,13 @@ class PeopleTab(QWidget):
 			read_names_file, Path(path), on_done=self._file_names, on_failed=self._file_failed, device=False
 		)
 
-	def _file_names(self, names):
+	def _file_names(self, names: Names):
+		replaced = self.store.names_replaced(names)
+		if (replaced or names.duplicates) and not messages.ask(
+			self, tr("import_file"), tr("confirm_import", replaced=replaced, duplicates=names.duplicates)
+		):
+			self.buttons["import_file"].setEnabled(True)
+			return
 		count = self.store.import_names(names, overwrite=True)
 		self.buttons["import_file"].setEnabled(True)
 		self._changed(count)

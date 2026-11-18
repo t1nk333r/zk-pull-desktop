@@ -21,10 +21,14 @@ own licence; the full texts are in the `licenses` folder. Their licences, not ZK
 
 ## Qt and PySide6 (LGPL-3.0)
 
-ZK Pull uses Qt and PySide6 as separate, unmodified library files (the `Qt6*.dll`, `PySide6` and
-`shiboken6` files in the `_internal` folder), so you can replace them with your own builds of the
-same version. Their source code is available from [qt.io](https://download.qt.io/official_releases/)
-and [PySide6 on PyPI](https://pypi.org/project/PySide6-Essentials/#files). Qt includes third-party
+ZK Pull uses Qt and PySide6 as separate, unmodified libraries. The Qt and PySide6 binaries (the
+`Qt6*.dll`, `PySide6\*.pyd` and `shiboken6` files in the `_internal` folder) can be replaced with
+your own builds of the same version. The small Python parts of PySide6 and shiboken6 are packed into
+`ZK Pull.exe` by PyInstaller; to use a modified PySide6 as a whole, rebuild ZK Pull from its public
+source ([github.com/t1nk333r/zk-pull-desktop](https://github.com/t1nk333r/zk-pull-desktop)) with
+the `pyinstaller` command in `.github/workflows/build.yml`, against your PySide6. The source code of
+Qt and PySide6 is available from [qt.io](https://download.qt.io/official_releases/) and
+[PySide6 on PyPI](https://pypi.org/project/PySide6-Essentials/#files). Qt includes third-party
 code, listed at
 [doc.qt.io/qt-6/licenses-used-in-qt.html](https://doc.qt.io/qt-6/licenses-used-in-qt.html).
 

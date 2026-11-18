@@ -1,5 +1,6 @@
 """Local SQLite database: devices, people (names for device user IDs), pulled punches and settings."""
 
+import ipaddress
 import os
 import sqlite3
 from contextlib import closing, suppress
@@ -45,12 +46,14 @@ CREATE TABLE IF NOT EXISTS device_serials (
 	PRIMARY KEY (device_id, serial)
 );
 INSERT OR IGNORE INTO device_serials (device_id, serial) SELECT id, serial FROM devices WHERE serial != '';
--- The days each pull covered (both included). A day no pull covered shows no punches, which looks
--- the same as everyone being absent, so the app warns about such days.
+-- The days each pull was asked for (both included) and when it ran. A day no pull covered shows no
+-- punches, which looks the same as everyone being absent, so the app warns about such days. Only
+-- days before pulled_at are complete: punches made later in the day, or on days after, were not read.
 CREATE TABLE IF NOT EXISTS pulled_ranges (
 	device_id INTEGER NOT NULL,
 	first_day TEXT NOT NULL,
-	last_day TEXT NOT NULL
+	last_day TEXT NOT NULL,
+	pulled_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS settings (
 	key TEXT PRIMARY KEY,
@@ -69,6 +72,22 @@ _ID_TABLE = str.maketrans(
 
 def normalize_id(text: str) -> str:
 	return str(text).translate(_ID_TABLE).strip()
+
+
+def normalize_ip(text: str) -> str | None:
+	"""The address as Windows should get it, or None if it is not a device on the office network.
+
+	Leading zeros are dropped: Windows reads 192.168.100.056 as octal and connects to .46."""
+	parts = normalize_id(text).split(".")
+	if len(parts) != 4 or not all(p.isascii() and p.isdigit() for p in parts):
+		return None  # hostnames too: the app is for the LAN, by address
+	try:
+		address = ipaddress.IPv4Address(".".join(str(int(p)) for p in parts))
+	except ValueError:
+		return None
+	if address.is_global or address.is_multicast or address.is_unspecified:
+		return None
+	return str(address)
 
 
 class DamagedError(sqlite3.DatabaseError):
@@ -145,6 +164,9 @@ class Store:
 			self.db.executescript(SCHEMA)
 			if new_ranges:
 				self._assume_pulled_so_far()
+			elif not self._has_column("pulled_ranges", "pulled_at"):
+				self._add_pulled_at()
+			self._normalize_device_addresses()
 		except sqlite3.DatabaseError:
 			self.db.close()  # so the damaged file can be moved aside (Windows locks open files)
 			raise
@@ -153,17 +175,38 @@ class Store:
 		sql = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
 		return self.db.execute(sql, (name,)).fetchone() is not None
 
+	def _has_column(self, table, column) -> bool:
+		return any(r["name"] == column for r in self.db.execute(f"PRAGMA table_info({table})"))
+
 	def _assume_pulled_so_far(self):
 		"""Versions before 0.4.1 did not record which days a pull covered. Take each device as pulled
-		from its first stored punch to its last pull, as those versions showed it, rather than warn
-		about every day pulled before the upgrade."""
+		from its first stored punch (from 2000, when ZK clocks start, if it has none) up to its last pull, as those
+		versions showed it, rather than warn about every day pulled before the upgrade."""
 		with self.db:
 			self.db.execute(
-				"INSERT INTO pulled_ranges (device_id, first_day, last_day) "
-				"SELECT d.id, min(substr(p.ts, 1, 10)), substr(d.last_pull, 1, 10) "
-				f"FROM devices d JOIN ({KNOWN_SERIALS}) s ON s.device_id = d.id "
-				"JOIN punches p ON p.serial = s.serial WHERE d.last_pull != '' GROUP BY d.id"
+				"INSERT INTO pulled_ranges (device_id, first_day, last_day, pulled_at) "
+				"SELECT d.id, coalesce(min(substr(p.ts, 1, 10)), '2000-01-01'), "
+				"substr(d.last_pull, 1, 10), d.last_pull "
+				f"FROM devices d LEFT JOIN ({KNOWN_SERIALS}) s ON s.device_id = d.id "
+				"LEFT JOIN punches p ON p.serial = s.serial WHERE d.last_pull != '' GROUP BY d.id"
 			)
+
+	def _add_pulled_at(self):
+		"""0.4.1 and 0.5.0 did not record when a pull ran. Its device's last pull is the best guess."""
+		with self.db:
+			self.db.execute("ALTER TABLE pulled_ranges ADD COLUMN pulled_at TEXT NOT NULL DEFAULT ''")
+			self.db.execute(
+				"UPDATE pulled_ranges SET pulled_at = "
+				"coalesce((SELECT last_pull FROM devices d WHERE d.id = device_id), '')"
+			)
+
+	def _normalize_device_addresses(self):
+		"""Addresses saved before 0.4.1 were not checked: 192.168.100.056 reaches .46 on Windows."""
+		with self.db:
+			for row in self.db.execute("SELECT id, ip FROM devices").fetchall():
+				ip = normalize_ip(row["ip"])
+				if ip and ip != row["ip"]:
+					self.db.execute("UPDATE devices SET ip = ? WHERE id = ?", (ip, row["id"]))
 
 	def check(self):
 		result = self.db.execute("PRAGMA quick_check").fetchone()[0]
@@ -274,13 +317,17 @@ class Store:
 				if period is not None:
 					start, end = (d.strftime(DATE_FORMAT) for d in period)
 					self.db.execute(
-						"INSERT INTO pulled_ranges (device_id, first_day, last_day) VALUES (?, ?, ?)",
-						(device_id, start, end),
+						"INSERT INTO pulled_ranges (device_id, first_day, last_day, pulled_at) VALUES (?, ?, ?, ?)",
+						(device_id, start, end, when.strftime(TS_FORMAT)),
 					)
 		return bool(updated)
 
 	def days_not_pulled(self, device_ids, start: date, end: date, today: date) -> dict[int, list[date]]:
-		"""Device ID -> the days from start to end, up to today, that no pull of it covered."""
+		"""Device ID -> the days from start to end, up to today, that no pull of it read in full.
+
+		A pull reads a day in full only if it ran after that day: a pull of "this month" at 09:30
+		has not read the afternoon, nor the days after. The day of the pull still counts while it is
+		today, as the last pull time shown says how current it is."""
 		end = min(end, today)
 		if start > end:
 			return {}
@@ -288,12 +335,16 @@ class Store:
 		missing = {}
 		for device_id in device_ids:
 			ranges = self.db.execute(
-				"SELECT first_day, last_day FROM pulled_ranges WHERE device_id = ? AND first_day <= ? AND last_day >= ?",
+				"SELECT first_day, last_day, pulled_at FROM pulled_ranges "
+				"WHERE device_id = ? AND first_day <= ? AND last_day >= ?",
 				(device_id, end.strftime(DATE_FORMAT), start.strftime(DATE_FORMAT)),
 			).fetchall()
-			covered = [
-				(date.fromisoformat(r["first_day"]), date.fromisoformat(r["last_day"])) for r in ranges
-			]
+			covered = []
+			for r in ranges:
+				first, last = date.fromisoformat(r["first_day"]), date.fromisoformat(r["last_day"])
+				ran = date.fromisoformat(r["pulled_at"][:10]) if r["pulled_at"] else last + timedelta(days=1)
+				# Complete up to the day before the pull; the pull day itself while it is today.
+				covered.append((first, min(last, ran if ran == today else ran - timedelta(days=1))))
 			gaps = [day for day in days if not any(a <= day <= b for a, b in covered)]
 			if gaps:
 				missing[device_id] = gaps
@@ -316,6 +367,22 @@ class Store:
 	def delete_person(self, user_id):
 		with self.db:
 			self.db.execute("DELETE FROM people WHERE user_id = ?", (user_id,))
+
+	def add_people(self, user_ids):
+		"""List IDs in People without a name; IDs already there are left as they are."""
+		with self.db:
+			self.db.executemany(
+				"INSERT OR IGNORE INTO people (user_id) VALUES (?)", [(normalize_id(i),) for i in user_ids]
+			)
+
+	def names_replaced(self, names: dict[str, str]) -> int:
+		"""How many names already typed in People would change if names were imported over them."""
+		current = {p.user_id: p.name for p in self.people() if p.name}
+		return sum(
+			1
+			for user_id, name in names.items()
+			if current.get(normalize_id(user_id), name.strip()) != name.strip()
+		)
 
 	def import_names(self, names: dict[str, str], overwrite=False) -> int:
 		"""Add names for user IDs; existing names are kept unless overwrite. Returns how many changed."""

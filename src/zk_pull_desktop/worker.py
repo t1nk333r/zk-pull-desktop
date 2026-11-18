@@ -99,6 +99,7 @@ DEVICE_MESSAGES = {
 	"closed": "err_closed",
 	"too_much": "err_too_much",
 	"no_serial": "err_no_serial",
+	"invalid_ip": "invalid_ip",
 }
 
 

@@ -194,3 +194,62 @@ def test_employees_are_people_and_ids_seen_in_punches(store):
 	store.save_person(Person("3", ""))
 	store.add_punches([punch("7", "2026-11-01 08:00:00"), punch("12", "2026-11-01 08:00:00")])
 	assert [(p.user_id, p.name) for p in store.employees()] == [("3", ""), ("7", ""), ("12", "Sara")]
+
+
+def test_a_pull_covers_only_what_it_could_read(store):
+	gate = store.save_device(Device(None, "Gate", "10.0.0.5"))
+	store.mark_pulled(gate, "SN1", datetime(2026, 11, 18, 9, 30), (date(2026, 11, 1), date(2026, 11, 30)))
+	# Still the 18th: the pull day counts, as "last pull 09:30" says how current it is.
+	assert store.days_not_pulled([gate], date(2026, 11, 1), date(2026, 11, 30), date(2026, 11, 18)) == {}
+	# On 1 December the 18th afternoon and the days after were never read.
+	missing = store.days_not_pulled([gate], date(2026, 11, 1), date(2026, 11, 30), date(2026, 12, 1))
+	assert missing[gate][0] == date(2026, 11, 18) and missing[gate][-1] == date(2026, 11, 30)
+	store.mark_pulled(gate, "SN1", datetime(2026, 12, 1, 8), (date(2026, 11, 1), date(2026, 11, 30)))
+	assert store.days_not_pulled([gate], date(2026, 11, 1), date(2026, 11, 30), date(2026, 12, 1)) == {}
+
+
+def test_upgrade_seeds_a_pulled_device_without_punches_and_adds_the_pull_time(tmp_path):
+	import sqlite3
+
+	path = tmp_path / "old.db"
+	s = Store(path)
+	gate = s.save_device(Device(None, "Gate", "10.0.0.5"))
+	s.mark_pulled(gate, "SN1", datetime(2026, 11, 10, 9))  # pulled, nothing stored
+	s.close()
+	with sqlite3.connect(path) as db:
+		db.execute("DROP TABLE pulled_ranges")
+	s = Store(path)
+	assert s.days_not_pulled([gate], date(2026, 11, 9), date(2026, 11, 9), date(2026, 11, 20)) == {}
+	s.close()
+
+	with sqlite3.connect(path) as db:  # a table from 0.4.1 / 0.5.0, without pulled_at
+		db.execute("DROP TABLE pulled_ranges")
+		db.execute("CREATE TABLE pulled_ranges (device_id INTEGER, first_day TEXT, last_day TEXT)")
+		db.execute("INSERT INTO pulled_ranges VALUES (?, '2026-11-01', '2026-11-30')", (gate,))
+	s = Store(path)
+	missing = s.days_not_pulled([gate], date(2026, 11, 1), date(2026, 11, 30), date(2026, 12, 1))
+	assert missing[gate][0] == date(2026, 11, 10)  # the last pull, 10 Nov 09:00, is the best guess
+	s.close()
+
+
+def test_addresses_saved_by_older_versions_are_fixed(tmp_path):
+	path = tmp_path / "db"
+	s = Store(path)
+	gate = s.save_device(Device(None, "Gate", "192.168.100.056"))
+	s.close()
+	s = Store(path)
+	assert s.device(gate).ip == "192.168.100.56"
+	s.close()
+
+
+def test_adding_unnamed_ids_keeps_existing_departments(store):
+	store.save_person(Person("7", "", "Warehouse"))
+	store.add_people(["7", "8"])
+	assert [(p.user_id, p.department) for p in store.people()] == [("7", "Warehouse"), ("8", "")]
+
+
+def test_names_replaced_counts_only_changes(store):
+	store.save_person(Person("1", "Ali"))
+	store.save_person(Person("2", "Sara"))
+	store.save_person(Person("3", ""))
+	assert store.names_replaced({"1": "Ali", "2": "Sarah", "3": "Omar", "4": "Huda"}) == 1
